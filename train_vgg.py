@@ -14,11 +14,6 @@ import torch
 import torch.utils.data as data
 from torch import nn
 
-from torchvision.models.utils import load_state_dict_from_url
-from typing import Type, Any, Callable, Union, List, Dict, Optional, cast
-from torch import Tensor
-from collections import OrderedDict
-
 import matplotlib.pyplot as plt
 
 
@@ -37,10 +32,10 @@ class cocoDataset(data.Dataset):
         index = index % len(self.image_list)
         image = cv2.imread(self.image_list[index])[:, :, ::-1].astype(np.float32) /  255
 
-        VGG_INPUT_SIZE = 224
-        image = cv2.resize(image, (VGG_INPUT_SIZE, VGG_INPUT_SIZE))
+        input_size = 224
+        image = cv2.resize(image, (input_size, input_size))
 
-        return image
+        return torch.from_numpy(image)
 
     def __len__(self):
         return len(self.image_list)
