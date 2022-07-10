@@ -35,7 +35,7 @@ class cocoDataset(data.Dataset):
         input_size = 224
         image = cv2.resize(image, (input_size, input_size))
 
-        return torch.from_numpy(image)
+        return torch.from_numpy(image), torch.tensor( [np.mean(image)] )
 
     def __len__(self):
         return len(self.image_list)
