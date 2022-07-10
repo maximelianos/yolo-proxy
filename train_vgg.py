@@ -37,6 +37,9 @@ class cocoDataset(data.Dataset):
         index = index % len(self.image_list)
         image = cv2.imread(self.image_list[index])[:, :, ::-1].astype(np.float32) /  255
 
+        VGG_INPUT_SIZE = 224
+        image = cv2.resize(image, (VGG_INPUT_SIZE, VGG_INPUT_SIZE))
+
         return image
 
     def __len__(self):
