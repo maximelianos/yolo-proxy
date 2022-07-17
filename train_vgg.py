@@ -21,6 +21,11 @@ DEVICE = 'cuda'
 
 
 class cocoDataset(data.Dataset):
+    """
+    Dataset returns: (str: image_name, str: degradation, tensor: image, tensor: gt_meaniou)
+    GT mean-iou is one number.
+    """
+
     def __init__(self):
         dataset_root = "../datasets"
         self.image_path = []  # gt
@@ -32,10 +37,14 @@ class cocoDataset(data.Dataset):
         index = index % len(self.image_path)
         image = cv2.imread(self.image_path[index])[:, :, ::-1].astype(np.float32) / 255
 
+        path = Path(self.image_path[index])
+        name = path.stem
+        degrad = path.parent.name
+
         input_size = 224
         image = cv2.resize(image, (input_size, input_size))
 
-        return self.image_path[index], torch.from_numpy(image), torch.tensor( [np.mean(image)] )
+        return name, degrad, torch.from_numpy(image), torch.tensor( [np.mean(image)] )
 
     def __len__(self):
         return len(self.image_path)
