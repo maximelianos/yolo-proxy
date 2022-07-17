@@ -26,7 +26,7 @@ class cocoDataset(data.Dataset):
         self.image_path = []  # gt
 
         pattern = os.path.join(dataset_root, "coco_5k_v3_decoded/*/*")
-        self.image_path = sorted(glob(pattern + ".png"), glob(pattern + ".jpg"))
+        self.image_path = sorted(glob(pattern + ".png") + glob(pattern + ".jpg"))
 
     def __getitem__(self, index):
         index = index % len(self.image_path)
