@@ -8,3 +8,10 @@ SSHPASS=$SSHPASS sshpass -e sftp -oBatchMode=no -b - 23m_vel@calypso.gml-team.ru
    put $1
    bye
 !
+
+#source polus_scripts/credentials.sh && \
+#SSHPASS=$SSHPASS sshpass -e sftp -oBatchMode=no -b - 23m_vel@calypso.gml-team.ru << !
+#  cd work/22k_koz/recognition-aware/datasets
+#  get coco_5k_v3.zip
+#  bye
+#!

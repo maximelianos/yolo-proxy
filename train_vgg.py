@@ -22,31 +22,29 @@ DEVICE = 'cuda'
 
 class cocoDataset(data.Dataset):
     def __init__(self):
-        self.image_list = []  # gt
-
-        dataset_root = "data"
-
-        self.image_list = sorted(glob(dataset_root + "/*.jpg"))
+        dataset_root = "../datasets"
+        self.image_path = []  # gt
+        self.image_path = sorted(glob(os.path.join(dataset_root, "/coco_5k_v3_decoded/*/*.png")))
 
     def __getitem__(self, index):
-        index = index % len(self.image_list)
-        image = cv2.imread(self.image_list[index])[:, :, ::-1].astype(np.float32) /  255
+        index = index % len(self.image_path)
+        image = cv2.imread(self.image_path[index])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
         image = cv2.resize(image, (input_size, input_size))
 
-        return torch.from_numpy(image), torch.tensor( [np.mean(image)] )
+        return self.image_path[index], torch.from_numpy(image), torch.tensor( [np.mean(image)] )
 
     def __len__(self):
-        return len(self.image_list)
+        return len(self.image_path)
 
 
 def test_dataset():
     train_dataset = cocoDataset()
     # f, i = train_dataset[0]
     # print(f.shape, i.shape)
-    print(train_dataset.image_list[1000])
+    print(train_dataset.image_path[1000])
     print("Length of dataset:", len(train_dataset))
-    print(f"images: {len(train_dataset.image_list)}")
+    print(f"images: {len(train_dataset.image_path)}")
 
 test_dataset()
