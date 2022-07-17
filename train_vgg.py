@@ -24,7 +24,9 @@ class cocoDataset(data.Dataset):
     def __init__(self):
         dataset_root = "../datasets"
         self.image_path = []  # gt
-        self.image_path = sorted(glob(os.path.join(dataset_root, "coco_5k_v3_decoded/*/*.png")))
+
+        pattern = os.path.join(dataset_root, "coco_5k_v3_decoded/*/*")
+        self.image_path = sorted(glob(pattern + ".png"), glob(pattern + ".jpg"))
 
     def __getitem__(self, index):
         index = index % len(self.image_path)
@@ -43,8 +45,7 @@ def test_dataset():
     train_dataset = cocoDataset()
     # f, i = train_dataset[0]
     # print(f.shape, i.shape)
-    print(train_dataset.image_path[1000])
     print("Length of dataset:", len(train_dataset))
-    print(f"images: {len(train_dataset.image_path)}")
+    print(train_dataset.image_path[1000])
 
 test_dataset()
