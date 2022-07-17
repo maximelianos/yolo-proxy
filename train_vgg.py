@@ -210,15 +210,23 @@ def main():
     train_dataset = cocoDataset()
     model = ProxyModel(vgg16_model)
 
+    # Load model weights
+    model_path = Path("checkpoints/proxy_model.pth")
+    if model_path.exists():
+        checkpoint = torch.load(model_path, map_location=torch.device(DEVICE))
+        model = checkpoint['model']
+        optimizer = checkpoint['optimizer']
+        step = checkpoint['step']
+        print('Continue from', step, 'step')
+    else:
+        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.02)
+
     experiment = dt.datetime.now().strftime("%H%M%S")
     # logger = Logger(path="runs/logbook-" + experiment)
     visualize_list = []  # [(disparity image, steps performed), ...]
-    model = ProxyModel(vgg16_model).to(DEVICE)
     print("Parameters:", sum(p.numel() for p in model.parameters()))
-    optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.02)
     train_loader = data.DataLoader(train_dataset, batch_size=200,
                                    pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
-
     train(model, train_loader, optimizer, visualize_list, 200)
 
 if __name__ == "__main__":
