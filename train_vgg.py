@@ -173,6 +173,17 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
                                                                             (time.time() - start_time) / step),
                       flush=True)
 
+                # Save model
+
+                model_path = Path("checkpoints/proxy_model.pth")
+
+                checkpoint = {
+                    'model': model,
+                    'optimizer': optimizer,
+                    'step': step
+                }
+                torch.save(checkpoint, model_path)
+
             #             if step % VAL_FREQ == VAL_FREQ - 1:
             #                 val_error = calc_validation_score()
             #                 metrics = {
