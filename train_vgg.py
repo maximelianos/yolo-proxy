@@ -68,10 +68,10 @@ class cocoDataset(data.Dataset):
         image = cv2.resize(image, (input_size, input_size))
 
         # get mean-iou for image from dataframe
-        gt = self.df[(self.df["img_basename"] == name) & (self.df["dataset_name"] == codec)]["yolov5s"]
-        gt = gt[0]
+        # gt = self.df[(self.df["img_basename"] == name) & (self.df["dataset_name"] == codec)]["yolov5s"]
+        # gt = gt[0]
 
-        return name, codec, torch.from_numpy(image), torch.tensor( [gt] )
+        return name, codec, torch.from_numpy(image), torch.tensor( [1] )
 
     def __len__(self):
         return len(self.image_path)
