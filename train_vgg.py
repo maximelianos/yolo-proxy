@@ -209,3 +209,5 @@ def main():
 
     train(model, train_loader, optimizer, visualize_list, 200)
 
+if __name__ == "__main__":
+    main()
