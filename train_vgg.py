@@ -24,7 +24,7 @@ class cocoDataset(data.Dataset):
     def __init__(self):
         dataset_root = "../datasets"
         self.image_path = []  # gt
-        self.image_path = sorted(glob(os.path.join(dataset_root, "/coco_5k_v3_decoded/*/*.png")))
+        self.image_path = sorted(glob(os.path.join(dataset_root, "coco_5k_v3_decoded/*/*.png")))
 
     def __getitem__(self, index):
         index = index % len(self.image_path)
