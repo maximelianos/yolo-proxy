@@ -14,6 +14,7 @@ import einops
 import torch
 import torch.utils.data as data
 from torch import nn
+import torchvision
 
 import matplotlib.pyplot as plt
 
