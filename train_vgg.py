@@ -170,7 +170,8 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
             if step % print_freq == print_freq - 1:
                 print("step: {}, MSE loss: {:.2f} step time: {:.2f}".format(step,
                                                                             show_loss,
-                                                                            (time.time() - start_time) / step))
+                                                                            (time.time() - start_time) / step),
+                      flush=True)
 
             #             if step % VAL_FREQ == VAL_FREQ - 1:
             #                 val_error = calc_validation_score()
@@ -204,8 +205,8 @@ def main():
     model = ProxyModel(vgg16_model).to(DEVICE)
     print("Parameters:", sum(p.numel() for p in model.parameters()))
     optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.02)
-    train_loader = data.DataLoader(train_dataset, batch_size=100,
-                                   pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
+    train_loader = data.DataLoader(train_dataset, batch_size=200,
+                                   pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
 
     train(model, train_loader, optimizer, visualize_list, 200)
 
