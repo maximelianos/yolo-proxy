@@ -85,3 +85,126 @@ def test_dataset():
     print(train_dataset.image_path[1000])
 
 test_dataset()
+
+
+class ProxyModel(nn.Module):
+    """
+    Input tensor must have shape (b 3 224 224)
+    """
+
+    def __init__(self, vgg16_model):
+        super().__init__()
+
+        self.vgg16 = vgg16_model
+        self.head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=25088, out_features=1, bias=True)
+        )
+
+    def __call__(self, x):
+        x = self.vgg16(x).detach()  # stop gradient?
+        x = self.head(x)
+        return x
+
+    def _conv(self, in_channels, out_channels, kernel_size, relu=True):
+        block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=0),
+            nn.BatchNorm2d(out_channels)
+        )
+        if relu:
+            block.add_module("relu", nn.ReLU())
+
+        return block
+
+
+PRINT_FREQ = 1
+
+
+def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1):
+    """
+    Main training loop. Load training data, run model forward and backward pass,
+    print training status, run validation.
+    """
+    start = time.time()
+    model.to(DEVICE)
+
+    print("Training steps:", train_steps)
+
+    while True:
+        model.train(True)  # set training mode
+        dataloader = train_dl
+        step = 0
+        ema_loss = 0.0
+        start_time = time.time()
+
+        # iterate over data
+        for name, codec, image, target in dataloader:
+            step += 1
+
+            # moving tensors to GPU
+            # tensor shape b h w c -> b c h w
+            image = image.to(DEVICE).permute(0, 3, 1, 2).float().contiguous()  # contiguous speeds up 2-4x
+            target = target.to(DEVICE)
+
+            # forward pass
+            optimizer.zero_grad()
+
+            out = model(image)  # shape=(b c 1 1)
+
+            loss = torch.mean((out - target) ** 2)
+            # print("Output shape", out.shape)
+            # print("Target", target)
+
+            # backward pass
+            loss.backward()
+            optimizer.step()
+
+            show_loss = loss.detach().cpu().numpy()
+            #             ema_loss = show_loss * (2/(1+step)) + ema_loss * (1-2/(1+step))
+            #             metrics = {
+            #                 'cross_entropy_loss': show_loss
+            #             }
+            #             logger.push(metrics)
+
+            if step % print_freq == print_freq - 1:
+                print("step: {}, MSE loss: {:.2f} step time: {:.2f}".format(step,
+                                                                            show_loss,
+                                                                            (time.time() - start_time) / step))
+
+            #             if step % VAL_FREQ == VAL_FREQ - 1:
+            #                 val_error = calc_validation_score()
+            #                 metrics = {
+            #                     'val_error_percent': val_error
+            #                 }
+            #                 logger.write_dict(metrics)
+            #                 print("validation error: {:.2f}".format(val_error))
+
+            if step > train_steps:
+                return
+
+    # return train_loss, valid_loss, disp_vis
+
+def main():
+    vgg16_model = torchvision.models.vgg16(pretrained=True)
+
+    # Freeze training for all layers
+    for param in vgg16_model.features.parameters():
+        param.requires_grad = False
+
+    modules = list(vgg16_model.children())[:-1]  # remove linear block
+    vgg16_model = nn.Sequential(*modules)
+
+    train_dataset = cocoDataset()
+    model = ProxyModel(vgg16_model)
+
+    experiment = dt.datetime.now().strftime("%H%M%S")
+    # logger = Logger(path="runs/logbook-" + experiment)
+    visualize_list = []  # [(disparity image, steps performed), ...]
+    model = ProxyModel(vgg16_model).to(DEVICE)
+    print("Parameters:", sum(p.numel() for p in model.parameters()))
+    optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.02)
+    train_loader = data.DataLoader(train_dataset, batch_size=100,
+                                   pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
+
+    train(model, train_loader, optimizer, visualize_list, 200)
+
