@@ -164,8 +164,8 @@ class cocoDataset(data.Dataset):
         df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
 
         # Remove images with no GT labels
-        df = df[df["labels"] != 0].reset_index(drop=True)
-        self.df = df
+        # df = df[df["labels"] != 0].reset_index(drop=True)
+        # self.df = df
 
     def __getitem__(self, index):
         index = index % len(self.image_path)
@@ -343,7 +343,7 @@ def main():
     print("Parameters:", sum(p.numel() for p in model.parameters()))
     train_loader = data.DataLoader(train_dataset, batch_size=2,
                                    pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
-    train(model, train_loader, optimizer, visualize_list, 1)
+    train(model, train_loader, optimizer, visualize_list, 10)
 
 if __name__ == "__main__":
     main()
