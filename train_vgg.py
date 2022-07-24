@@ -283,6 +283,12 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
                                                                             (time.time() - start_time) / step),
                       flush=True)
 
+                wandb.log({
+                    "step": step,
+                    "MSE loss": show_loss,
+                    "step time": (time.time() - start_time) / step,
+                    })
+
                 # Save model
 
                 model_path = Path("checkpoints/proxy_model.pth")
