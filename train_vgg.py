@@ -161,7 +161,7 @@ class cocoDataset(data.Dataset):
         pattern = os.path.join(dataset_root, "coco_5k_v3_decoded/*/*")
         self.image_path = sorted(glob(pattern + ".png") + glob(pattern + ".jpg"))
 
-        df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
+        self.df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
 
         # Remove images with no GT labels
         # df = df[df["labels"] != 0].reset_index(drop=True)
