@@ -1,4 +1,5 @@
 import sys
+import argparse
 from glob import glob
 from pathlib import Path
 import time
@@ -11,6 +12,9 @@ import pandas as pd
 import cv2
 import einops
 
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
+
 import torch
 import torch.utils.data as data
 from torch import nn
@@ -18,6 +22,8 @@ import torchvision
 
 import matplotlib.pyplot as plt
 
+import wandb
+wandb.init(project="my-test-project", config={"speed": 100500})
 
 DEVICE = 'cuda'
 
@@ -41,6 +47,106 @@ def read_results_csv(csv_fname):
     return dataframe
 
 
+# load dataframe (duplicate from repo)
+
+# general_metrics = []
+# RANDOM_STATE = 1234
+#
+#
+# class Context:
+#     # Base data
+#     metric_data = None  # data from csv with filtered 'labels' and 'ref'
+#     TRAIN_METRICS = None  # training columns
+#     TARGET_METRIC = None  # target column
+#     DATASET_NAME = None
+#
+#     # Split data (with all columns)
+#     train_data = None
+#     val_data = None
+#
+#     # Data for model training (only relevant columns)
+#     X_train = None
+#     X_train_scaled = None
+#     Y_train = None
+#
+#     X_val = None
+#     X_val_scaled = None
+#     Y_val = None
+#
+#     # sklearn classes
+#     scaler = None
+#     model_svr = None
+#
+#
+# def load_dataset(ctx: Context, csv_path: str, target_metric: str):
+#     print(f"=== Loading dataset from {csv_path} ===")
+#     df = read_results_csv(csv_path)
+#     df = df.fillna(df.mean(numeric_only=True))
+#     ctx.DATASET_NAME = Path(csv_path).parent.name
+#     print("Unique image filenames:", len(df[IMG_KEY].unique()))
+#
+#     columns_without_superfast = {
+#         c: c.replace(' superfast-', ' fast-')
+#         for c in df.columns
+#     }
+#     df.rename(columns=columns_without_superfast, inplace=True)  # metric naming in VQMT 13->14 versions
+#
+#     if 'huawei' in ctx.DATASET_NAME:  # Unstable naming of vmaf in VQMT
+#         df.rename(columns={"netflix vmaf_vmaf061-y": "netflix vmaf_vmaf061_float-y"}, inplace=True)
+#
+#     # Select only relevant images
+#     if 'labels' in df.columns:
+#         df = df[df['labels'] > 0]  # use images only with some objects on them
+#
+#     # Remove ref data from analyzing
+#     # df = df[df[DAT_KEY] != 'ref']
+#
+#     ctx.TRAIN_METRICS = sorted([c for c in df.columns if c in general_metrics])
+#     print('Used metrics:', ctx.TRAIN_METRICS)
+#     ctx.TARGET_METRIC = target_metric
+#     ctx.metric_data = df.copy()  # Warning: columns are not sorted
+#
+#
+# def split_names(ctx, names, test_size):
+#     # TODO: Implement different logic for datasets
+#     if 'huawei' in ctx.DATASET_NAME:
+#         # shuffle videos
+#         names["videoname"] = names[IMG_KEY].apply(lambda filename: filename.split(".mp4")[0])
+#         train_videos, val_videos = train_test_split(names["videoname"].unique(), test_size=test_size, random_state=RANDOM_STATE, )
+#         return (names[names["videoname"].isin(train_videos)][IMG_KEY], names[names["videoname"].isin(val_videos)][IMG_KEY])
+#     else:
+#         return train_test_split(names[IMG_KEY].unique(), test_size=test_size, random_state=RANDOM_STATE, )
+#
+#
+# def split_dataset(ctx: Context, test_size=0.3, train_images=1000, test_only=False):
+#     # Split data, group by image names
+#     train_names, val_names = split_names(ctx, ctx.metric_data.loc[:, [IMG_KEY]].copy(), test_size=test_size)  # get column as df, not series
+#     if train_images is not None:
+#         train_names = train_names[:train_images]
+#
+#     ctx.train_data = ctx.metric_data[ctx.metric_data[IMG_KEY].isin(train_names)].reset_index(drop=True).copy()
+#     ctx.val_data = ctx.metric_data[ctx.metric_data[IMG_KEY].isin(val_names)].reset_index(drop=True).copy()
+#     if test_only:
+#         ctx.train_data = ctx.metric_data.copy()
+#         ctx.val_data = ctx.metric_data.copy()
+#
+#     ctx.train_data = shuffle(ctx.train_data, random_state=RANDOM_STATE)
+#     ctx.val_data = shuffle(ctx.val_data, random_state=RANDOM_STATE)
+#     ctx.X_train = ctx.train_data[ctx.TRAIN_METRICS]
+#     ctx.Y_train = ctx.train_data[ctx.TARGET_METRIC]
+#
+#     ctx.X_val = ctx.val_data[ctx.TRAIN_METRICS]
+#     ctx.Y_val = ctx.val_data[ctx.TARGET_METRIC]
+#
+#     # Scale data
+#     if not ctx.scaler:
+#         ctx.scaler = StandardScaler()
+#         ctx.scaler.fit(ctx.X_train)
+#
+#     ctx.X_train_scaled = ctx.scaler.transform(ctx.X_train)
+#     ctx.X_val_scaled = ctx.scaler.transform(ctx.X_val)
+
+# ********************************* COCO dataset
 
 class cocoDataset(data.Dataset):
     """
@@ -223,15 +329,15 @@ def main():
         step = checkpoint['step']
         print('Continue from', step, 'step')
     else:
-        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.02)
+        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.001)
 
     experiment = dt.datetime.now().strftime("%H%M%S")
     # logger = Logger(path="runs/logbook-" + experiment)
     visualize_list = []  # [(disparity image, steps performed), ...]
     print("Parameters:", sum(p.numel() for p in model.parameters()))
-    train_loader = data.DataLoader(train_dataset, batch_size=200,
+    train_loader = data.DataLoader(train_dataset, batch_size=2,
                                    pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
-    train(model, train_loader, optimizer, visualize_list, 200)
+    train(model, train_loader, optimizer, visualize_list, 1)
 
 if __name__ == "__main__":
     main()
