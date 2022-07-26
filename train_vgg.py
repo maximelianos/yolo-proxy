@@ -14,6 +14,7 @@ import einops
 
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+from scipy.stats import pearsonr, spearmanr
 
 import torch
 import torch.utils.data as data
