@@ -250,12 +250,13 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
     print("Training steps:", train_steps)
     wandb.init(project="my-test-project", config={"speed": 100500})
 
+    step = 0
+    ema_loss = 0.0
+    start_time = time.time()
+
     while True:
         model.train(True)  # set training mode
         dataloader = train_dl
-        step = 0
-        ema_loss = 0.0
-        start_time = time.time()
 
         # iterate over data
         for image, target in dataloader:
