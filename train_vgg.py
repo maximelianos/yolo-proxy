@@ -258,8 +258,9 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
 
         # iterate over data
         for image, target in dataloader:
-            break
             step += 1
+            if step > train_steps:
+                break
 
             # moving tensors to GPU
             # tensor shape b h w c -> b c h w
@@ -292,11 +293,11 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
                                                                             (time.time() - start_time) / step),
                       flush=True)
 
-                # wandb.log({
-                #     "step": step,
-                #     "MSE loss": show_loss,
-                #     "step time": (time.time() - start_time) / step,
-                #     })
+                wandb.log({
+                    "step": step,
+                    "MSE loss": show_loss,
+                    "step time": (time.time() - start_time) / step,
+                    })
 
                 # Save model
 
@@ -328,6 +329,8 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
 
         for image, target in dataloader:
             val_step += image.shape[0]
+            if val_step > train_steps:
+                break
 
             # moving tensors to GPU
             # tensor shape b h w c -> b c h w
@@ -343,9 +346,10 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             show_loss = loss.detach().cpu().numpy()
             val_loss += show_loss
 
-        print("validation:", val_loss / val_step)
-
-        return
+        wandb.log({
+            "step": step,
+            "validation:": val_loss / val_step
+            })
 
     # return train_loss, valid_loss, disp_vis
 
