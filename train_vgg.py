@@ -46,106 +46,6 @@ def read_results_csv(csv_fname):
     check(dataframe)
     return dataframe
 
-
-# load dataframe (duplicate from repo)
-
-# general_metrics = []
-# RANDOM_STATE = 1234
-#
-#
-# class Context:
-#     # Base data
-#     metric_data = None  # data from csv with filtered 'labels' and 'ref'
-#     TRAIN_METRICS = None  # training columns
-#     TARGET_METRIC = None  # target column
-#     DATASET_NAME = None
-#
-#     # Split data (with all columns)
-#     train_data = None
-#     val_data = None
-#
-#     # Data for model training (only relevant columns)
-#     X_train = None
-#     X_train_scaled = None
-#     Y_train = None
-#
-#     X_val = None
-#     X_val_scaled = None
-#     Y_val = None
-#
-#     # sklearn classes
-#     scaler = None
-#     model_svr = None
-#
-#
-# def load_dataset(ctx: Context, csv_path: str, target_metric: str):
-#     print(f"=== Loading dataset from {csv_path} ===")
-#     df = read_results_csv(csv_path)
-#     df = df.fillna(df.mean(numeric_only=True))
-#     ctx.DATASET_NAME = Path(csv_path).parent.name
-#     print("Unique image filenames:", len(df[IMG_KEY].unique()))
-#
-#     columns_without_superfast = {
-#         c: c.replace(' superfast-', ' fast-')
-#         for c in df.columns
-#     }
-#     df.rename(columns=columns_without_superfast, inplace=True)  # metric naming in VQMT 13->14 versions
-#
-#     if 'huawei' in ctx.DATASET_NAME:  # Unstable naming of vmaf in VQMT
-#         df.rename(columns={"netflix vmaf_vmaf061-y": "netflix vmaf_vmaf061_float-y"}, inplace=True)
-#
-#     # Select only relevant images
-#     if 'labels' in df.columns:
-#         df = df[df['labels'] > 0]  # use images only with some objects on them
-#
-#     # Remove ref data from analyzing
-#     # df = df[df[DAT_KEY] != 'ref']
-#
-#     ctx.TRAIN_METRICS = sorted([c for c in df.columns if c in general_metrics])
-#     print('Used metrics:', ctx.TRAIN_METRICS)
-#     ctx.TARGET_METRIC = target_metric
-#     ctx.metric_data = df.copy()  # Warning: columns are not sorted
-#
-#
-# def split_names(ctx, names, test_size):
-#     # TODO: Implement different logic for datasets
-#     if 'huawei' in ctx.DATASET_NAME:
-#         # shuffle videos
-#         names["videoname"] = names[IMG_KEY].apply(lambda filename: filename.split(".mp4")[0])
-#         train_videos, val_videos = train_test_split(names["videoname"].unique(), test_size=test_size, random_state=RANDOM_STATE, )
-#         return (names[names["videoname"].isin(train_videos)][IMG_KEY], names[names["videoname"].isin(val_videos)][IMG_KEY])
-#     else:
-#         return train_test_split(names[IMG_KEY].unique(), test_size=test_size, random_state=RANDOM_STATE, )
-#
-#
-# def split_dataset(ctx: Context, test_size=0.3, train_images=1000, test_only=False):
-#     # Split data, group by image names
-#     train_names, val_names = split_names(ctx, ctx.metric_data.loc[:, [IMG_KEY]].copy(), test_size=test_size)  # get column as df, not series
-#     if train_images is not None:
-#         train_names = train_names[:train_images]
-#
-#     ctx.train_data = ctx.metric_data[ctx.metric_data[IMG_KEY].isin(train_names)].reset_index(drop=True).copy()
-#     ctx.val_data = ctx.metric_data[ctx.metric_data[IMG_KEY].isin(val_names)].reset_index(drop=True).copy()
-#     if test_only:
-#         ctx.train_data = ctx.metric_data.copy()
-#         ctx.val_data = ctx.metric_data.copy()
-#
-#     ctx.train_data = shuffle(ctx.train_data, random_state=RANDOM_STATE)
-#     ctx.val_data = shuffle(ctx.val_data, random_state=RANDOM_STATE)
-#     ctx.X_train = ctx.train_data[ctx.TRAIN_METRICS]
-#     ctx.Y_train = ctx.train_data[ctx.TARGET_METRIC]
-#
-#     ctx.X_val = ctx.val_data[ctx.TRAIN_METRICS]
-#     ctx.Y_val = ctx.val_data[ctx.TARGET_METRIC]
-#
-#     # Scale data
-#     if not ctx.scaler:
-#         ctx.scaler = StandardScaler()
-#         ctx.scaler.fit(ctx.X_train)
-#
-#     ctx.X_train_scaled = ctx.scaler.transform(ctx.X_train)
-#     ctx.X_val_scaled = ctx.scaler.transform(ctx.X_val)
-
 # ********************************* COCO dataset
 
 def get_path(row):
@@ -331,6 +231,9 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
         val_step = 0
         val_loss = 0.0
 
+        out_list = []
+        target_list = []
+
         for image, target in dataloader:
             val_step += image.shape[0]
             # if val_step > train_steps:
@@ -342,13 +245,21 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             target = target.to(DEVICE)
 
             out = model(image)  # shape=(b c 1 1)
-
             loss = torch.sum((out - target) ** 2)
+
+            out_list += list( out.detach().cpu().numpy().flatten() )
+            target_list += list( target.detach().cpu().numpy().flatten() )
+
             # print("Output shape", out.shape)
             # print("Target", target)
 
             show_loss = loss.detach().cpu().numpy()
             val_loss += show_loss
+
+        x_data = np.array(out_list)
+        y_data = np.array(target_list)
+        corrp = pearsonr(x_data, y_data)[0]
+        corrs = spearmanr(x_data, y_data)[0]
 
         print("step: {}, validation MSE: {:.2f}".format(step,
                                                         val_loss / val_step,
@@ -357,7 +268,9 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
 
         wandb.log({
             "step": step,
-            "validation": val_loss / val_step
+            "validation": val_loss / val_step,
+            "pearson": corrp,
+            "spearman": corrs,
             })
 
         if step >= train_steps:
@@ -398,7 +311,7 @@ def main():
                                    pin_memory=False, shuffle=True, num_workers=10, drop_last=True)
     val_loader   = data.DataLoader(val_dataset, batch_size=200,
                                    pin_memory=False, shuffle=False, num_workers=10, drop_last=True)
-    train(model, train_loader, val_loader, optimizer, visualize_list, 10000)
+    train(model, train_loader, val_loader, optimizer, visualize_list, 1)
 
 if __name__ == "__main__":
     main()
