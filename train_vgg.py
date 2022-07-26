@@ -174,9 +174,14 @@ class cocoDataset(data.Dataset):
         self.train_data = df[df["img_basename"].isin(train_names)].reset_index(drop=True).copy()
         self.val_data   = df[df["img_basename"].isin(val_names)  ].reset_index(drop=True).copy()
 
+        if not validation:
+            self.data = self.train_data
+        else:
+            self.data = self.val_data
+
     def __getitem__(self, index):
-        index = index % self.train_data.shape[0]
-        row = self.train_data.iloc[index]
+        index = index % self.data.shape[0]
+        row = self.data.iloc[index]
         image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
@@ -188,7 +193,7 @@ class cocoDataset(data.Dataset):
         return torch.from_numpy(image), torch.tensor( [gt] )
 
     def __len__(self):
-        return self.train_data.shape[0]
+        return self.data.shape[0]
 
 
 def test_dataset():
@@ -233,7 +238,7 @@ class ProxyModel(nn.Module):
 PRINT_FREQ = 1
 
 
-def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1):
+def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print_freq=1):
     """
     Main training loop. Load training data, run model forward and backward pass,
     print training status, run validation.
@@ -252,6 +257,7 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
 
         # iterate over data
         for image, target in dataloader:
+            break
             step += 1
 
             # moving tensors to GPU
@@ -313,6 +319,33 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
             if step > train_steps:
                 return
 
+        # ************************************** Validation
+        model.train(False)  # set training mode
+        dataloader = val_dl
+        val_step = 0
+        val_loss = 0.0
+
+        for image, target in dataloader:
+            val_step += image.shape[0]
+
+            # moving tensors to GPU
+            # tensor shape b h w c -> b c h w
+            image = image.to(DEVICE).permute(0, 3, 1, 2).float().contiguous()  # contiguous speeds up 2-4x
+            target = target.to(DEVICE)
+
+            out = model(image)  # shape=(b c 1 1)
+
+            loss = torch.sum((out - target) ** 2)
+            # print("Output shape", out.shape)
+            # print("Target", target)
+
+            show_loss = loss.detach().cpu().numpy()
+            val_loss += show_loss
+
+        print("validation:", val_loss / val_step)
+
+        return
+
     # return train_loss, valid_loss, disp_vis
 
 def main():
@@ -326,6 +359,7 @@ def main():
     vgg16_model = nn.Sequential(*modules)
 
     train_dataset = cocoDataset()
+    val_dataset = cocoDataset(validation=True)
     model = ProxyModel(vgg16_model)
 
     # Load model weights
@@ -345,7 +379,9 @@ def main():
     print("Parameters:", sum(p.numel() for p in model.parameters()))
     train_loader = data.DataLoader(train_dataset, batch_size=2,
                                    pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
-    train(model, train_loader, optimizer, visualize_list, 10)
+    val_loader   = data.DataLoader(val_dataset, batch_size=2,
+                                   pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
+    train(model, train_loader, val_loader, optimizer, visualize_list, 10)
 
 if __name__ == "__main__":
     main()
