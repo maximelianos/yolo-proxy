@@ -182,7 +182,8 @@ class cocoDataset(data.Dataset):
     def __getitem__(self, index):
         index = index % self.data.shape[0]
         row = self.data.iloc[index]
-        print(row, row["path"])
+        if not Path(row["path"]).exists:
+            print("Path not found:", row["path"])
         image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
@@ -378,10 +379,10 @@ def main():
     # logger = Logger(path="runs/logbook-" + experiment)
     visualize_list = []  # [(disparity image, steps performed), ...]
     print("Parameters:", sum(p.numel() for p in model.parameters()))
-    train_loader = data.DataLoader(train_dataset, batch_size=2,
-                                   pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
-    val_loader   = data.DataLoader(val_dataset, batch_size=2,
-                                   pin_memory=False, shuffle=True, num_workers=5, drop_last=True)
+    train_loader = data.DataLoader(train_dataset, batch_size=1,
+                                   pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
+    val_loader   = data.DataLoader(val_dataset, batch_size=1,
+                                   pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
     train(model, train_loader, val_loader, optimizer, visualize_list, 10)
 
 if __name__ == "__main__":
