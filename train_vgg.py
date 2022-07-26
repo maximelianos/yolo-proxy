@@ -182,6 +182,7 @@ class cocoDataset(data.Dataset):
     def __getitem__(self, index):
         index = index % self.data.shape[0]
         row = self.data.iloc[index]
+        print(row, row["path"])
         image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
