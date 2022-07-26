@@ -186,7 +186,10 @@ class cocoDataset(data.Dataset):
             print("Path not found:", row["path"])
         else:
             print("Path ok:", row["path"])
-        image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
+        image = cv2.imread(row["path"])
+        if not image:
+            print("Image not loaded:", row["path"])
+        image = image[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
         image = cv2.resize(image, (input_size, input_size))
