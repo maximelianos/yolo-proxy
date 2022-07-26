@@ -150,7 +150,7 @@ def read_results_csv(csv_fname):
 
 def get_path(row):
     name, codec = row["img_basename"], row["dataset_name"]
-    if "jpeg" in codec:
+    if "jpeg" in codec or "ref" in codec:
         extension = "jpg"
     else:
         extension = "png"
