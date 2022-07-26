@@ -346,6 +346,11 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             show_loss = loss.detach().cpu().numpy()
             val_loss += show_loss
 
+        print("step: {}, validation MSE: {:.2f}".format(step,
+                                                        show_loss,
+                                                        ),
+              flush=True)
+
         wandb.log({
             "step": step,
             "validation:": val_loss / val_step
