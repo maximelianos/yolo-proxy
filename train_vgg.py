@@ -384,7 +384,7 @@ def main():
     train_loader = data.DataLoader(train_dataset, batch_size=1,
                                    pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
     val_loader   = data.DataLoader(val_dataset, batch_size=1,
-                                   pin_memory=False, shuffle=True, num_workers=1, drop_last=True)
+                                   pin_memory=False, shuffle=False, num_workers=1, drop_last=True)
     train(model, train_loader, val_loader, optimizer, visualize_list, 10)
 
 if __name__ == "__main__":
