@@ -184,6 +184,8 @@ class cocoDataset(data.Dataset):
         row = self.data.iloc[index]
         if not Path(row["path"]).exists:
             print("Path not found:", row["path"])
+        else:
+            print("Path ok:", row["path"])
         image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
