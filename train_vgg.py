@@ -185,7 +185,7 @@ class cocoDataset(data.Dataset):
         # get mean-iou for image from dataframe
         gt = row["yolov5s"]
 
-        return name, codec, torch.from_numpy(image), torch.tensor( [gt] )
+        return torch.from_numpy(image), torch.tensor( [gt] )
 
     def __len__(self):
         return self.train_data.shape[0]
@@ -251,7 +251,7 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
         start_time = time.time()
 
         # iterate over data
-        for name, codec, image, target in dataloader:
+        for image, target in dataloader:
             step += 1
 
             # moving tensors to GPU
