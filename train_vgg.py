@@ -118,9 +118,9 @@ class ProxyModel(nn.Module):
         self.vgg16 = vgg16_model
         self.head = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(in_features=25088, out_features=1, bias=True),
-            # nn.ReLU(),
-            # nn.Linear(in_features=4096, out_features=4096, bias=True),
+            nn.Linear(in_features=25088, out_features=1024, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=1024, out_features=1, bias=True),
             # nn.ReLU(),
             # nn.Linear(in_features=4096, out_features=1, bias=True),
         )
