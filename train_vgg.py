@@ -23,7 +23,7 @@ import torchvision
 import matplotlib.pyplot as plt
 
 import wandb
-#wandb.init(project="my-test-project", config={"speed": 100500})
+
 
 DEVICE = 'cuda'
 
@@ -248,6 +248,7 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
     model.to(DEVICE)
 
     print("Training steps:", train_steps)
+    wandb.init(project="my-test-project", config={"speed": 100500})
 
     while True:
         model.train(True)  # set training mode
