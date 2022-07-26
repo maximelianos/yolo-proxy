@@ -304,7 +304,7 @@ def main():
         step = checkpoint['step']
         print('Continue from', step, 'step')
     else:
-        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.1)
+        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.0001)
 
     experiment = dt.datetime.now().strftime("%H%M%S")
     # logger = Logger(path="runs/logbook-" + experiment)
