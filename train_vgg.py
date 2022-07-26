@@ -166,7 +166,7 @@ class cocoDataset(data.Dataset):
         self.validation = validation
 
         # "../datasets/coco_5k_v3_decoded/av1_150/000011.jpg"
-        df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
+        df = read_results_csv("../datasets/coco_5k_results/merged.csv")
         df["path"] = df.apply(get_path, axis=1) # generate image paths from dataframe
         df = df[df["labels"] != 0].reset_index(drop=True) # Remove images with no GT labels
 
