@@ -314,7 +314,7 @@ def main():
                                    pin_memory=False, shuffle=True, num_workers=10, drop_last=True)
     val_loader   = data.DataLoader(val_dataset, batch_size=200,
                                    pin_memory=False, shuffle=False, num_workers=10, drop_last=True)
-    train(model, train_loader, val_loader, optimizer, visualize_list, 1)
+    train(model, train_loader, val_loader, optimizer, visualize_list, 10000)
 
 if __name__ == "__main__":
     main()
