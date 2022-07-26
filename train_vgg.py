@@ -239,7 +239,7 @@ class ProxyModel(nn.Module):
 PRINT_FREQ = 1
 
 
-def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print_freq=1):
+def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print_freq=10):
     """
     Main training loop. Load training data, run model forward and backward pass,
     print training status, run validation.
@@ -260,9 +260,10 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
 
         # iterate over data
         for image, target in dataloader:
-            step += 1
-            if step > train_steps:
+            if step >= train_steps:
                 break
+
+            step += 1
 
             # moving tensors to GPU
             # tensor shape b h w c -> b c h w
@@ -320,9 +321,6 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             #                 logger.write_dict(metrics)
             #                 print("validation error: {:.2f}".format(val_error))
 
-            if step > train_steps:
-                return
-
         # ************************************** Validation
         model.train(False)  # set training mode
         dataloader = val_dl
@@ -331,8 +329,8 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
 
         for image, target in dataloader:
             val_step += image.shape[0]
-            if val_step > train_steps:
-                break
+            # if val_step > train_steps:
+            #     break
 
             # moving tensors to GPU
             # tensor shape b h w c -> b c h w
@@ -352,6 +350,9 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             "step": step,
             "validation:": val_loss / val_step
             })
+
+        if step >= train_steps:
+            return
 
     # return train_loss, valid_loss, disp_vis
 
@@ -384,11 +385,11 @@ def main():
     # logger = Logger(path="runs/logbook-" + experiment)
     visualize_list = []  # [(disparity image, steps performed), ...]
     print("Parameters:", sum(p.numel() for p in model.parameters()))
-    train_loader = data.DataLoader(train_dataset, batch_size=50,
+    train_loader = data.DataLoader(train_dataset, batch_size=200,
                                    pin_memory=False, shuffle=True, num_workers=10, drop_last=True)
-    val_loader   = data.DataLoader(val_dataset, batch_size=50,
+    val_loader   = data.DataLoader(val_dataset, batch_size=200,
                                    pin_memory=False, shuffle=False, num_workers=10, drop_last=True)
-    train(model, train_loader, val_loader, optimizer, visualize_list, 10)
+    train(model, train_loader, val_loader, optimizer, visualize_list, 100)
 
 if __name__ == "__main__":
     main()
