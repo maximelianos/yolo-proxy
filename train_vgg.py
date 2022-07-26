@@ -118,11 +118,11 @@ class ProxyModel(nn.Module):
         self.vgg16 = vgg16_model
         self.head = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(in_features=25088, out_features=4096, bias=True),
-            nn.ReLU(),
-            nn.Linear(in_features=4096, out_features=4096, bias=True),
-            nn.ReLU(),
-            nn.Linear(in_features=4096, out_features=1, bias=True),
+            nn.Linear(in_features=25088, out_features=1, bias=True),
+            # nn.ReLU(),
+            # nn.Linear(in_features=4096, out_features=4096, bias=True),
+            # nn.ReLU(),
+            # nn.Linear(in_features=4096, out_features=1, bias=True),
         )
 
     def __call__(self, x):
@@ -262,8 +262,10 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
         corrp = pearsonr(x_data, y_data)[0]
         corrs = spearmanr(x_data, y_data)[0]
 
-        print("step: {}, validation MSE: {:.2f}".format(step,
+        print("step: {}, validation MSE: {:.2f}, pearson: {:.2f}, spearman: {:.2f}".format(step,
                                                         val_loss / val_step,
+                                                        corrp,
+                                                        corrs
                                                         ),
               flush=True)
 
