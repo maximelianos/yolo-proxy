@@ -217,7 +217,11 @@ class ProxyModel(nn.Module):
         self.vgg16 = vgg16_model
         self.head = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(in_features=25088, out_features=1, bias=True)
+            nn.Linear(in_features=25088, out_features=4096, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=4096, out_features=4096, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=4096, out_features=1, bias=True),
         )
 
     def __call__(self, x):
@@ -347,13 +351,13 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
             val_loss += show_loss
 
         print("step: {}, validation MSE: {:.2f}".format(step,
-                                                        show_loss,
+                                                        val_loss / val_step,
                                                         ),
               flush=True)
 
         wandb.log({
             "step": step,
-            "validation:": val_loss / val_step
+            "validation": val_loss / val_step
             })
 
         if step >= train_steps:
