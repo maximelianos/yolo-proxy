@@ -187,7 +187,7 @@ class cocoDataset(data.Dataset):
         else:
             print("Path ok:", row["path"])
         image = cv2.imread(row["path"])
-        if not image:
+        if image is None:
             print("Image not loaded:", row["path"])
         image = image[:, :, ::-1].astype(np.float32) / 255
 
