@@ -175,7 +175,7 @@ class cocoDataset(data.Dataset):
         self.val_data   = df[df["img_basename"].isin(val_names)  ].reset_index(drop=True).copy()
 
     def __getitem__(self, index):
-        index = index % len(self.image_path)
+        index = index % self.train_data.shape[0]
         row = self.train_data.iloc[index]
         image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
@@ -188,7 +188,7 @@ class cocoDataset(data.Dataset):
         return name, codec, torch.from_numpy(image), torch.tensor( [gt] )
 
     def __len__(self):
-        return len(self.image_path)
+        return self.train_data.shape[0]
 
 
 def test_dataset():
@@ -196,7 +196,6 @@ def test_dataset():
     # f, i = train_dataset[0]
     # print(f.shape, i.shape)
     print("Length of dataset:", len(train_dataset))
-    print(train_dataset.image_path[1000])
 
 test_dataset()
 
