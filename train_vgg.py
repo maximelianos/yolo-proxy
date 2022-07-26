@@ -23,7 +23,7 @@ import torchvision
 import matplotlib.pyplot as plt
 
 import wandb
-wandb.init(project="my-test-project", config={"speed": 100500})
+#wandb.init(project="my-test-project", config={"speed": 100500})
 
 DEVICE = 'cuda'
 
@@ -148,39 +148,42 @@ def read_results_csv(csv_fname):
 
 # ********************************* COCO dataset
 
+def get_path(row):
+    name, codec = row["img_basename"], row["dataset_name"]
+    if "jpeg" in codec:
+        extension = "jpg"
+    else:
+        extension = "png"
+    return f"../datasets/coco_5k_v3_decoded/{codec}/{name}.{extension}"
+
 class cocoDataset(data.Dataset):
     """
     Dataset returns: (str: image_name, str: degradation, tensor: image, tensor: gt_meaniou)
     GT mean-iou is one number.
     """
 
-    def __init__(self):
-        dataset_root = "../datasets"
-        self.image_path = []  # gt
+    def __init__(self, validation=False):
+        self.validation = validation
 
-        pattern = os.path.join(dataset_root, "coco_5k_v3_decoded/*/*")
-        self.image_path = sorted(glob(pattern + ".png") + glob(pattern + ".jpg"))
+        # "../datasets/coco_5k_v3_decoded/av1_150/000011.jpg"
+        df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
+        df["path"] = df.apply(get_path, axis=1) # generate image paths from dataframe
+        df = df[df["labels"] != 0].reset_index(drop=True) # Remove images with no GT labels
 
-        self.df = read_results_csv(os.path.join(dataset_root, "coco_5k_results/merged.csv"))
-
-        # Remove images with no GT labels
-        # df = df[df["labels"] != 0].reset_index(drop=True)
-        # self.df = df
+        train_names, val_names = train_test_split(df["img_basename"].unique(), test_size=0.3, random_state=1543)
+        self.train_data = df[df["img_basename"].isin(train_names)].reset_index(drop=True).copy()
+        self.val_data   = df[df["img_basename"].isin(val_names)  ].reset_index(drop=True).copy()
 
     def __getitem__(self, index):
         index = index % len(self.image_path)
-        image = cv2.imread(self.image_path[index])[:, :, ::-1].astype(np.float32) / 255
-
-        path = Path(self.image_path[index])
-        name = path.stem
-        codec = path.parent.name
+        row = self.train_data.iloc[index]
+        image = cv2.imread(row["path"])[:, :, ::-1].astype(np.float32) / 255
 
         input_size = 224
         image = cv2.resize(image, (input_size, input_size))
 
         # get mean-iou for image from dataframe
-        gt = self.df[(self.df["img_basename"] == name) & (self.df["dataset_name"] == codec)]["yolov5s"]
-        gt = gt.iloc[0]
+        gt = row["yolov5s"]
 
         return name, codec, torch.from_numpy(image), torch.tensor( [gt] )
 
@@ -283,11 +286,11 @@ def train(model, train_dl, optimizer, visualize_list, train_steps, print_freq=1)
                                                                             (time.time() - start_time) / step),
                       flush=True)
 
-                wandb.log({
-                    "step": step,
-                    "MSE loss": show_loss,
-                    "step time": (time.time() - start_time) / step,
-                    })
+                # wandb.log({
+                #     "step": step,
+                #     "MSE loss": show_loss,
+                #     "step time": (time.time() - start_time) / step,
+                #     })
 
                 # Save model
 
