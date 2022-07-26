@@ -182,7 +182,7 @@ class cocoDataset(data.Dataset):
     def __getitem__(self, index):
         index = index % self.data.shape[0]
         row = self.data.iloc[index]
-        if not Path(row["path"]).exists:
+        if not Path(row["path"]).exists():
             print("Path not found:", row["path"])
         else:
             print("Path ok:", row["path"])
