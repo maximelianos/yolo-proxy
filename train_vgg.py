@@ -23,7 +23,7 @@ import torchvision
 
 import matplotlib.pyplot as plt
 
-import wandb
+# import wandb
 
 
 DEVICE = 'cuda'
@@ -115,19 +115,40 @@ class ProxyModel(nn.Module):
     def __init__(self, vgg16_model):
         super().__init__()
 
-        self.vgg16 = vgg16_model
-        self.head = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(in_features=25088, out_features=4096, bias=True),
-            nn.ReLU(),
-            nn.Linear(in_features=4096, out_features=1, bias=True),
-            # nn.ReLU(),
-            # nn.Linear(in_features=4096, out_features=1, bias=True),
-        )
+        # self.vgg16 = vgg16_model
+
+        self.resnet_model = torchvision.models.resnet18(pretrained=True)
+        for param in self.resnet_model.parameters():
+            param.requires_grad = False
+        self.resnet_model.fc = nn.Identity()
+        self.fc = nn.Linear(512, 1)
+
+        # vgg16_model = torchvision.models.vgg16(pretrained=True)
+        # for param in vgg16_model.features.parameters():
+        #     param.requires_grad = False
+        # modules = list(vgg16_model.children())[:-1]  # remove linear block
+        # self.vgg16 = nn.Sequential(*modules)
+        #
+        # self.head = nn.Sequential(
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=25088, out_features=1, bias=True),
+        # )
+
+        # self.head = nn.Sequential(
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=25088, out_features=4096, bias=True),
+        #     nn.ReLU(),
+        #     nn.Linear(in_features=4096, out_features=1, bias=True),
+        #     # nn.ReLU(),
+        #     # nn.Linear(in_features=4096, out_features=1, bias=True),
+        # )
 
     def __call__(self, x):
-        x = self.vgg16(x).detach()  # stop gradient?
-        x = self.head(x)
+        # x = self.vgg16(x) #.detach()  # stop gradient?
+        # x = self.head(x)
+        x = self.resnet_model(x)
+        x = self.fc(x)
+
         return x
 
     def _conv(self, in_channels, out_channels, kernel_size, relu=True):
@@ -153,7 +174,7 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
     model.to(DEVICE)
 
     print("Training steps:", train_steps)
-    wandb.init(project="my-test-project", config={"speed": 100500})
+    # wandb.init(project="my-test-project", config={"speed": 100500})
 
     step = 0
     ema_loss = 0.0
@@ -201,11 +222,11 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
                                                                             (time.time() - start_time) / step),
                       flush=True)
 
-                wandb.log({
-                    "step": step,
-                    "MSE loss": show_loss,
-                    "step time": (time.time() - start_time) / step,
-                    })
+                # wandb.log({
+                #     "step": step,
+                #     "MSE loss": show_loss,
+                #     "step time": (time.time() - start_time) / step,
+                #     })
 
                 # Save model
 
@@ -262,6 +283,12 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
         corrp = pearsonr(x_data, y_data)[0]
         corrs = spearmanr(x_data, y_data)[0]
 
+        with open("out.npy", "wb") as f:
+            np.save(f, x_data)
+        with open("target.npy", "wb") as f:
+            np.save(f, y_data)
+
+
         print("step: {}, validation MSE: {:.2f}, pearson: {:.2f}, spearman: {:.2f}, steps: {}".format(step,
                 val_loss / val_step,
                 corrp,
@@ -270,12 +297,12 @@ def train(model, train_dl, val_dl, optimizer, visualize_list, train_steps, print
                 ),
             flush=True)
 
-        wandb.log({
-            "step": step,
-            "validation": val_loss / val_step,
-            "pearson": corrp,
-            "spearman": corrs,
-            })
+        # wandb.log({
+        #     "step": step,
+        #     "validation": val_loss / val_step,
+        #     "pearson": corrp,
+        #     "spearman": corrs,
+        #     })
 
         if step >= train_steps:
             return
@@ -305,7 +332,7 @@ def main():
         step = checkpoint['step']
         print('Continue from', step, 'step')
     else:
-        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.001)
+        optimizer = torch.optim.Adam(filter(lambda param: param.requires_grad, model.parameters()), lr=0.01)
 
     experiment = dt.datetime.now().strftime("%H%M%S")
     # logger = Logger(path="runs/logbook-" + experiment)
