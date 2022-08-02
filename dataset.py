@@ -94,26 +94,26 @@ class cocoDataset(data.Dataset):
         list_distorted = []
         list_delta_miou = []
 
-        batch = 10
+        batch = 2
         for index in np.random.randint(df.shape[0], size=batch):
             row_dist = df.iloc[index]
             img_name = row_dist["img_basename"]
             row_ref = self.data[
                 (self.data["dataset_name"] == "ref") & (self.data["img_basename"] == img_name)
-            ]
+            ].iloc[0]
+
+            image_ref = cv2.imread(row_ref["path"])
+            image_ref = image_ref[:, :, ::-1].astype(np.float32) / 255
+            image_ref = cv2.resize(image_ref, (input_size, input_size))
 
             image_dist = cv2.imread(row_dist["path"])
             image_dist = image_dist[:, :, ::-1].astype(np.float32) / 255
             image_dist = cv2.resize(image_dist, (input_size, input_size))
 
-            image_ref = cv2.imread(row_dist["path"])
-            image_ref = image_ref[:, :, ::-1].astype(np.float32) / 255
-            image_ref = cv2.resize(image_ref, (input_size, input_size))
-
             miou_diff = row_ref["yolov5s"] - row_dist["yolov5s"]
 
-            list_reference.append(torch.tensor(image_ref))
-            list_distorted.append(torch.tensor(image_dist))
+            list_reference.append(torch.tensor(image_ref).permute(2, 0, 1))
+            list_distorted.append(torch.tensor(image_dist).permute(2, 0, 1))
             list_delta_miou.append(miou_diff)
 
         return  {

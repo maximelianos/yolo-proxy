@@ -14,6 +14,31 @@ from torchvision.models import resnet18
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
+import sys
+import argparse
+from glob import glob
+from pathlib import Path
+import time
+import copy
+import os
+import datetime as dt
+
+import numpy as np
+import pandas as pd
+import cv2
+import einops
+
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
+from scipy.stats import pearsonr, spearmanr
+
+import torch
+import torch.utils.data as data
+from torch import nn
+import torchvision
+
+import matplotlib.pyplot as plt
+
 from dataset import cocoDataset
 
 
@@ -39,7 +64,9 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(num_epochs):
         model.train()
+        step = 0
         for data in tqdm.tqdm(train_loader):
+            step += 1
             optimizer.zero_grad()
 
             with torch.cuda.amp.autocast():
@@ -48,6 +75,7 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
                 labels = data['delta_target'].cuda().float()
                 outputs = model(reference, distorted)
                 loss = criterion(outputs, labels[:, None])
+                #print("L1 (MSE):", loss.item())
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -57,7 +85,9 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
         outs_val = []
         gt_val = []
         with torch.no_grad():
+            step = 0
             for data in tqdm.tqdm(val_loader):
+                step += 1
                 with torch.cuda.amp.autocast():
                     reference = data['reference'].cuda()
                     distorted = data['distorted'].cuda()
@@ -77,7 +107,12 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
 
         if spearman > best_spearman:
             best_spearman = spearman
-            torch.save(model.state_dict(), checkpoint)
+
+            save_data = {
+                'model': model,
+                'optimizer': optimizer
+            }
+            torch.save(save_data, checkpoint)
 
 
 
@@ -133,16 +168,19 @@ if __name__ == "__main__":
     # dataset_val = StochasticDataset(args.val_samples, NUM_SAMPLES, celeba_distortions_path, emb_base,
     #                     emb_distortions, map_base_name_to_ref, X_test, is_val=True, transform=data_transform)
 
-    batch_size = 1
+    batch_size = 128
+    workers = 32
 
     train_dataset = cocoDataset()
     val_dataset = cocoDataset(validation=True)
+
     train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
-                                   pin_memory=False, shuffle=True, num_workers=0, drop_last=True)
-    val_loader = data.DataLoader(val_dataset, batch_size=batch_size,
-                                 pin_memory=False, shuffle=False, num_workers=0, drop_last=True)
+        shuffle=True,  num_workers=workers, drop_last=True, pin_memory=False)
+
+    val_loader = data.DataLoader(  val_dataset,   batch_size=batch_size,
+        shuffle=False, num_workers=workers, drop_last=True, pin_memory=False)
 
     criterion_l1 = nn.L1Loss()
     model = Net().cuda()
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-    train(model, optimizer, criterion_l1, train_loader, val_loader, 1, 'model.pth')
+    train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
