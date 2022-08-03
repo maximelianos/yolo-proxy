@@ -42,6 +42,8 @@ import matplotlib.pyplot as plt
 from dataset import cocoDataset
 
 
+DEVICE = "cuda"
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -70,9 +72,9 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
             optimizer.zero_grad()
 
             with torch.cuda.amp.autocast():
-                reference = data['reference'].cuda()
-                distorted = data['distorted'].cuda()
-                labels = data['delta_target'].cuda().float()
+                reference = data['reference'].to(DEVICE)
+                distorted = data['distorted'].to(DEVICE)
+                labels = data['delta_target'].to(DEVICE).float()
                 outputs = model(reference, distorted)
                 loss = criterion(outputs, labels[:, None])
                 #print("L1 (MSE):", loss.item())
@@ -89,9 +91,9 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
             for data in tqdm.tqdm(val_loader):
                 step += 1
                 with torch.cuda.amp.autocast():
-                    reference = data['reference'].cuda()
-                    distorted = data['distorted'].cuda()
-                    labels = data['delta_target'].cuda().float()
+                    reference = data['reference'].to(DEVICE) # shape (b s c h w)
+                    distorted = data['distorted'].to(DEVICE) # shape (b s c h w)
+                    labels = data['delta_target'].to(DEVICE).float() # shape (b)
                     outputs = model(reference, distorted)
                     loss = criterion(outputs, labels[:, None])
                 val_loss.append(loss.item())
@@ -114,6 +116,43 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
             }
             torch.save(save_data, checkpoint)
 
+
+def eval(checkpoint, val_loader):
+    checkpoint = Path(checkpoint)
+    if checkpoint.exists():
+        checkpoint = torch.load(checkpoint, map_location=torch.device(DEVICE))
+        model = checkpoint["model"]
+    else:
+        print("Checkpoint not found, stop evaluation")
+        return
+
+    model.eval()
+    out_index = []
+    val_loss = []
+    outs_val = []
+    gt_val = []
+    with torch.no_grad():
+        step = 0
+        for data in tqdm.tqdm(val_loader):
+            if step > 10:
+                return
+            step += 1
+            with torch.cuda.amp.autocast():
+                reference = data['reference'].to(DEVICE)
+                distorted = data['distorted'].to(DEVICE)
+                labels = data['delta_target'].to(DEVICE).float()
+                indices = data["index"]
+                outputs = model(reference, distorted) # shape (b 1)
+                loss = criterion(outputs, labels[:, None])
+            out_index += list(indices)
+            val_loss.append(loss.item())
+            outs_val.extend(list(outputs[:, 0].detach().cpu().numpy()))
+            gt_val.extend(list(labels.detach().cpu().numpy()))
+    df = pd.DataFrame({
+        "index": out_index,
+        "delta": outs_val
+    })
+    df.to_csv("deltas.csv", index=False)
 
 
 if __name__ == "__main__":
@@ -168,11 +207,12 @@ if __name__ == "__main__":
     # dataset_val = StochasticDataset(args.val_samples, NUM_SAMPLES, celeba_distortions_path, emb_base,
     #                     emb_distortions, map_base_name_to_ref, X_test, is_val=True, transform=data_transform)
 
-    batch_size = 128
-    workers = 32
+    batch_size = 32
+    workers = 16
 
     train_dataset = cocoDataset()
     val_dataset = cocoDataset(validation=True)
+    test_dataset = cocoTestDataset(validation=True)
 
     train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
         shuffle=True,  num_workers=workers, drop_last=True, pin_memory=False)
@@ -181,6 +221,6 @@ if __name__ == "__main__":
         shuffle=False, num_workers=workers, drop_last=True, pin_memory=False)
 
     criterion_l1 = nn.L1Loss()
-    model = Net().cuda()
+    model = Net().to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-    train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
+    # train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
