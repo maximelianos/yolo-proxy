@@ -1,45 +1,29 @@
-import os
-import cv2
-import tqdm
-import torch
-import scipy
-import pickle
-import argparse
-import torchvision
-import numpy as np
-import pandas as pd
-import torch.nn as nn
-import torch.optim as optim
-from torchvision.models import resnet18
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
-
 import sys
 import argparse
 from glob import glob
 from pathlib import Path
 import time
-import copy
 import os
 import datetime as dt
 
 import numpy as np
 import pandas as pd
 import cv2
-import einops
 
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr, spearmanr, kendalltau
 
 import torch
-import torch.utils.data as data
+from torch.utils import data
 from torch import nn
 import torchvision
+from torchvision.models import resnet18
 
+import tqdm
 import matplotlib.pyplot as plt
 
-from dataset import cocoDataset
+from dataset import BaseDataset, TrainDataset, TestDataset
 
 
 DEVICE = "cuda"
@@ -101,9 +85,9 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
                 gt_val.extend(list(labels.detach().cpu().numpy()))
 
         mean_loss = np.mean(val_loss)
-        spearman = scipy.stats.spearmanr(outs_val, gt_val)[0]
-        pearsonr = scipy.stats.pearsonr(outs_val, gt_val)[0]
-        kendall = scipy.stats.kendalltau(outs_val, gt_val)[0]
+        spearman = spearmanr(outs_val, gt_val)[0]
+        pearsonr = pearsonr(outs_val, gt_val)[0]
+        kendall = kendalltau(outs_val, gt_val)[0]
 
         print(f"Valid Loss: {mean_loss:3f} | Spearman: {spearman:3f} | Pearson: {pearsonr:3f} | Kendall: {kendall:3f}")
 
@@ -134,8 +118,8 @@ def eval(checkpoint, val_loader):
     with torch.no_grad():
         step = 0
         for data in tqdm.tqdm(val_loader):
-            if step > 10:
-                return
+            # if step > 10:
+            #     break
             step += 1
             with torch.cuda.amp.autocast():
                 reference = data['reference'].to(DEVICE)
@@ -143,9 +127,9 @@ def eval(checkpoint, val_loader):
                 labels = data['delta_target'].to(DEVICE).float()
                 indices = data["index"]
                 outputs = model(reference, distorted) # shape (b 1)
-                loss = criterion(outputs, labels[:, None])
-            out_index += list(indices)
-            val_loss.append(loss.item())
+                # loss = criterion(outputs, labels[:, None])
+            out_index += list(indices.numpy())
+            # val_loss.append(loss.item())
             outs_val.extend(list(outputs[:, 0].detach().cpu().numpy()))
             gt_val.extend(list(labels.detach().cpu().numpy()))
     df = pd.DataFrame({
@@ -208,19 +192,24 @@ if __name__ == "__main__":
     #                     emb_distortions, map_base_name_to_ref, X_test, is_val=True, transform=data_transform)
 
     batch_size = 32
-    workers = 16
+    workers = 32
 
-    train_dataset = cocoDataset()
-    val_dataset = cocoDataset(validation=True)
-    test_dataset = cocoTestDataset(validation=True)
+    coco_base = BaseDataset("../datasets/coco_5k_results/merged.csv")
+    # train_dataset = cocoDataset()
+    # val_dataset = cocoDataset(validation=True)
+    test_dataset = TestDataset(coco_base)
 
-    train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
-        shuffle=True,  num_workers=workers, drop_last=True, pin_memory=False)
+    # train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
+    #     shuffle=True,  num_workers=workers, drop_last=True, pin_memory=False)
+    #
+    # val_loader = data.DataLoader(  val_dataset,   batch_size=batch_size,
+    #     shuffle=False, num_workers=workers, drop_last=True, pin_memory=False)
 
-    val_loader = data.DataLoader(  val_dataset,   batch_size=batch_size,
-        shuffle=False, num_workers=workers, drop_last=True, pin_memory=False)
+    test_loader = data.DataLoader( test_dataset,  batch_size=batch_size,
+        num_workers=workers, drop_last=False, pin_memory=False)
 
     criterion_l1 = nn.L1Loss()
     model = Net().to(DEVICE)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
     # train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
+    eval("checkpoints/proxy_model.pth", test_loader)
