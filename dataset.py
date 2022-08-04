@@ -44,7 +44,7 @@ def get_path(row, prepend):
     return f"{prepend}/{codec}/{name}.{extension}"
 
 class BaseDataset:
-    def __init__(self, csv_path, data_path="../datasets/coco_5k_v3_decoded"):
+    def __init__(self, csv_path, data_path):
         # example: "../datasets/coco_5k_v3_decoded/av1_150/000011.jpg"
         df = read_results_csv(csv_path)
         df["path"] = df.apply(partial(get_path, prepend=data_path), axis=1)  # add column with paths to images
@@ -64,7 +64,7 @@ class BaseDataset:
 
 class TrainDataset(torch.utils.data.Dataset):
     """
-    Return random elements of dataset. Used for training.
+    Return random elements of dataset. Used for training and validation.
     Dataset returns:
     {
         reference: s c h w
@@ -81,7 +81,7 @@ class TrainDataset(torch.utils.data.Dataset):
         else:
             self.data = base_dataset.train_data
 
-    def __getitem__(self, index):
+    def __getitem__(self, _):
         input_size = 224
 
         # select degradation

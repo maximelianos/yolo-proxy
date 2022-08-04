@@ -101,7 +101,7 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
             torch.save(save_data, checkpoint)
 
 
-def eval(checkpoint, val_loader):
+def evaluate(checkpoint, val_loader):
     checkpoint = Path(checkpoint)
     if checkpoint.exists():
         checkpoint = torch.load(checkpoint, map_location=torch.device(DEVICE))
@@ -191,25 +191,29 @@ if __name__ == "__main__":
     # dataset_val = StochasticDataset(args.val_samples, NUM_SAMPLES, celeba_distortions_path, emb_base,
     #                     emb_distortions, map_base_name_to_ref, X_test, is_val=True, transform=data_transform)
 
+    is_evaluate = True
+
     batch_size = 32
     workers = 32
 
-    coco_base = BaseDataset("../datasets/coco_5k_results/merged.csv")
-    # train_dataset = cocoDataset()
-    # val_dataset = cocoDataset(validation=True)
+    coco_base = BaseDataset(csv_path="../datasets/coco_5k_results/merged.csv",
+        data_path="../datasets/coco_5k_v3_decoded")
+    train_dataset = TrainDataset(coco_base, validation=False)
+    val_dataset = TrainDataset(coco_base, validation=True)
     test_dataset = TestDataset(coco_base)
-
-    # train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
-    #     shuffle=True,  num_workers=workers, drop_last=True, pin_memory=False)
-    #
-    # val_loader = data.DataLoader(  val_dataset,   batch_size=batch_size,
-    #     shuffle=False, num_workers=workers, drop_last=True, pin_memory=False)
-
-    test_loader = data.DataLoader( test_dataset,  batch_size=batch_size,
-        num_workers=workers, drop_last=False, pin_memory=False)
 
     criterion_l1 = nn.L1Loss()
     model = Net().to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-    # train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
-    eval("checkpoints/proxy_model.pth", test_loader)
+    if is_evaluate:
+        test_loader = data.DataLoader(test_dataset, batch_size=batch_size,
+            num_workers=workers, drop_last=False, pin_memory=False)
+
+        evaluate("checkpoints/proxy_model.pth", test_loader)
+    else:
+        train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
+            num_workers=workers, drop_last=True, pin_memory=False)
+        val_loader = data.DataLoader(val_dataset, batch_size=batch_size,
+            num_workers=workers, drop_last=True, pin_memory=False)
+
+        train(model, optimizer, criterion_l1, train_loader, val_loader, 200, "checkpoints/proxy_model.pth")
