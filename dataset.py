@@ -73,9 +73,10 @@ class TrainDataset(torch.utils.data.Dataset):
     }
     """
 
-    def __init__(self, base_dataset, validation=False):
+    def __init__(self, base_dataset, validation=False, batch=1):
         self.validation = validation
         self.dists = base_dataset.dists
+        self.batch = batch
         if validation:
             self.data = base_dataset.val_data
         else:
@@ -92,9 +93,8 @@ class TrainDataset(torch.utils.data.Dataset):
         list_distorted = []
         list_delta_miou = []
 
-        batch = 10
         # load <batch> pairs of reference and distorted images
-        for index in np.random.randint(df.shape[0], size=batch):
+        for index in np.random.randint(df.shape[0], size=self.batch):
             row_dist = df.iloc[index]
             img_name = row_dist["img_basename"]
             row_ref = self.data.loc[img_name, "ref"]
@@ -120,7 +120,7 @@ class TrainDataset(torch.utils.data.Dataset):
         }
 
     def __len__(self):
-        return self.data.shape[0]
+        return self.data.shape[0] // self.batch
 
 
 class TestDataset(torch.utils.data.IterableDataset):
@@ -135,9 +135,10 @@ class TestDataset(torch.utils.data.IterableDataset):
     }
     """
 
-    def __init__(self, base_dataset):
+    def __init__(self, base_dataset, batch=1):
         self.data = base_dataset.val_data
         self.dists = base_dataset.dists
+        self.batch = batch
 
     def __iter__(self):
         input_size = 224
@@ -153,9 +154,8 @@ class TestDataset(torch.utils.data.IterableDataset):
             # shuffle (optional?)
             df = df.sample(frac=1, random_state=0).reset_index(drop=True)
 
-            batch = 10
             # select start index of batch
-            for i in range(0, df.shape[0], batch):
+            for i in range(0, df.shape[0], self.batch):
                 item_idx += 1
                 if item_idx % worker_total_num != worker_id:
                     # skipping needed for parallel data loading
@@ -167,7 +167,7 @@ class TestDataset(torch.utils.data.IterableDataset):
                 list_index = []  # remember row index at inference
 
                 # load batch
-                for j in range(batch):
+                for j in range(self.batch):
                     index = (i + j) % df.shape[0]
 
                     row_dist = df.iloc[index]
@@ -197,4 +197,4 @@ class TestDataset(torch.utils.data.IterableDataset):
                 }
 
     def __len__(self):
-        return self.data.shape[0]
+        return self.data.shape[0] // self.batch

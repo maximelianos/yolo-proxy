@@ -50,7 +50,11 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(num_epochs):
         model.train()
+        step = 0
         for data in tqdm.tqdm(train_loader):
+            # if step > 10:
+            #     break
+            step += 1
             optimizer.zero_grad()
 
             with torch.cuda.amp.autocast():
@@ -69,7 +73,11 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
         outs_val = []
         gt_val = []
         with torch.no_grad():
+            step = 0
             for data in tqdm.tqdm(val_loader):
+                # if step > 10:
+                #     break
+                step += 1
                 with torch.cuda.amp.autocast():
                     reference = data['reference'].to(DEVICE)
                     distorted = data['distorted'].to(DEVICE)
@@ -81,14 +89,14 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
                 gt_val.extend(list(labels.detach().cpu().numpy()))
 
         mean_loss = np.mean(val_loss)
-        spearman = spearmanr(outs_val, gt_val)[0]
-        pearsonr = pearsonr(outs_val, gt_val)[0]
-        kendall = kendalltau(outs_val, gt_val)[0]
+        corr_spearman = spearmanr(outs_val, gt_val)[0]
+        corr_pearsonr = pearsonr(outs_val, gt_val)[0]
+        corr_kendall = kendalltau(outs_val, gt_val)[0]
 
-        print(f"Valid Loss: {mean_loss:3f} | Spearman: {spearman:3f} | Pearson: {pearsonr:3f} | Kendall: {kendall:3f}")
+        print(f"Valid Loss: {mean_loss:3f} | Spearman: {corr_spearman:3f} | Pearson: {corr_pearsonr:3f} | Kendall: {corr_kendall:3f}")
 
-        if spearman > best_spearman:
-            best_spearman = spearman
+        if corr_spearman > best_spearman:
+            best_spearman = corr_spearman
 
             save_data = {
                 'model': model,
@@ -131,16 +139,17 @@ def evaluate(checkpoint, val_loader):
 
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
-    is_evaluate = True
+    is_evaluate = False
 
-    batch_size = 32
+    batch_size = 16 * 10
     workers = 32
+    batch_s = 5
 
     coco_base = BaseDataset(csv_path="../datasets/coco_5k_results/merged.csv",
         data_path="../datasets/coco_5k_v3_decoded")
-    train_dataset = TrainDataset(coco_base, validation=False)
-    val_dataset = TrainDataset(coco_base, validation=True)
-    test_dataset = TestDataset(coco_base)
+    train_dataset = TrainDataset(coco_base, validation=False, batch=batch_s)
+    val_dataset = TrainDataset(coco_base, validation=True, batch=batch_s)
+    test_dataset = TestDataset(coco_base, batch=batch_s)
 
     criterion_l1 = nn.L1Loss()
     model = Net().to(DEVICE)
