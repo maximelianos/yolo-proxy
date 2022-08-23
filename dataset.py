@@ -26,6 +26,7 @@ def read_results_csv(csv_fname):
 # ********************************* COCO dataset
 
 def get_path(row, prepend):
+    # Utility function, construct path to images
     name, codec = row["img_basename"], row["dataset_name"]
     if "huawei" in prepend:
         if "jpeg" in codec:
@@ -80,6 +81,7 @@ class TrainDataset(torch.utils.data.Dataset):
         else:
             self.data = base_dataset.train_data
 
+    # getitem-based dataset (instead of iterable dataset) allows shuffling
     def __getitem__(self, index):
         input_size = 224
 

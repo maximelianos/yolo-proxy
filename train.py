@@ -39,18 +39,12 @@ class Net(nn.Module):
         b, c, h, w = ref.shape
         a = self.backbone(ref)  # (b, c, h, w) -> (b, 512)
         b = self.backbone(dist)
-        concat = torch.cat((a, b, a-b), dim=1)  # (b, 1024)
+        concat = torch.cat((a, b, a-b), dim=1)  # (b, 512*3)
         x = self.fc(concat)  # (b, 1)
         return x
 
 
-def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, checkpoint):
-    ckpt_path = Path(checkpoint)
-    if ckpt_path.exists():
-        ckpt = torch.load(checkpoint, map_location=torch.device(DEVICE))
-        model = ckpt["model"]
-        print("Model loaded from checkpoint")
-
+def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, checkpoint_path):
     best_spearman = 0
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(num_epochs):
@@ -103,12 +97,11 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
                 "model": model,
                 "optimizer": optimizer
             }
-            torch.save(save_data, checkpoint)
+            torch.save(save_data, checkpoint_path)
 
 
 def evaluate(checkpoint, val_loader):
-    ckpt_path = Path(checkpoint)
-    if ckpt_path.exists():
+    if Path(checkpoint).exists():
         ckpt = torch.load(checkpoint, map_location=torch.device(DEVICE))
         model = ckpt["model"]
         print("Model loaded from checkpoint")
@@ -141,29 +134,34 @@ def evaluate(checkpoint, val_loader):
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
     is_evaluate = False
-    batch_size = 128
+    batch_size = 256
     workers = 32
 
-    coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
-        data_path="../datasets/coco_5k_v3_decoded")
-    # coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
-    #                         data_path="../datasets/huawei_objects_decoded")
-    train_dataset = TrainDataset(coco_base, validation=False)
-    val_dataset =   TrainDataset(coco_base, validation=True)
-
-    criterion_l1 = nn.L1Loss()
     model = Net().to(DEVICE)
+    if Path(checkpoint_path).exists():
+        ckpt = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
+        model = ckpt["model"]
+        print("Model loaded from checkpoint")
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    criterion_l1 = nn.L1Loss()
+
     if is_evaluate:
+        coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
+                                data_path="../datasets/huawei_objects_decoded")
         test_dataset = TrainDataset(coco_base, no_split=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
         evaluate(checkpoint_path, test_loader)
     else:
+        coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
+                                data_path="../datasets/coco_5k_v3_decoded")
+        train_dataset = TrainDataset(coco_base, validation=False)
+        val_dataset =   TrainDataset(coco_base, validation=True)
+
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
             num_workers=workers, drop_last=True, pin_memory=False)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size,
+        val_loader =   DataLoader(val_dataset,   batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
         num_epochs = 10
