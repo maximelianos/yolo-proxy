@@ -15,7 +15,7 @@ from sklearn.utils import shuffle
 from scipy.stats import pearsonr, spearmanr, kendalltau
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils import data
 from torch import nn
 import torchvision
 from torchvision.models import resnet18
@@ -23,7 +23,7 @@ from torchvision.models import resnet18
 import tqdm
 import matplotlib.pyplot as plt
 
-from dataset import BaseDataset, TrainDataset
+from dataset import BaseDataset, TrainDataset, TestDataset
 
 
 DEVICE = "cuda"
@@ -33,56 +33,55 @@ class Net(nn.Module):
         super().__init__()
         self.backbone = resnet18(pretrained=True)
         self.backbone.fc = nn.Identity()
-        self.fc = nn.Linear(512 * 3, 1)
-
+        self.fc = nn.Linear(512, 1)
+        
     def forward(self, ref, dist):
-        b, c, h, w = ref.shape
-        a = self.backbone(ref)  # (b, c, h, w) -> (b, 512)
-        b = self.backbone(dist)
-        concat = torch.cat((a, b, a-b), dim=1)  # (b, 1024)
-        x = self.fc(concat)  # (b, 1)
+        b, s, c, h, w = ref.shape
+        a = self.backbone(ref.view((-1, c, h, w)))  # (b*s, c, h, w) -> (b*s, 512)
+        b = self.backbone(dist.view((-1, c, h, w)))
+        diff = (a - b).view((-1, s, 512))  # (b, s, 512)
+        pooled = diff.mean(dim=1)  # (b, 512)
+        x = self.fc(pooled)  # (b, 1)
         return x
 
 
-def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, checkpoint):
-    ckpt_path = Path(checkpoint)
-    if ckpt_path.exists():
-        ckpt = torch.load(checkpoint, map_location=torch.device(DEVICE))
-        model = ckpt["model"]
-        print("Model loaded from checkpoint")
-
+def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, checkpoint='model.pth'):
     best_spearman = 0
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(num_epochs):
-        # Train
-
         model.train()
+        step = 0
         for data in tqdm.tqdm(train_loader):
+            # if step > 10:
+            #     break
+            step += 1
             optimizer.zero_grad()
 
             with torch.cuda.amp.autocast():
-                reference = data["reference"].to(DEVICE) # shape (b c h w)
-                distorted = data["distorted"].to(DEVICE) # shape (b c h w)
-                labels = data["iou_dist"].to(DEVICE).float() # shape (b)
+                reference = data['reference'].to(DEVICE) # shape (b s c h w)
+                distorted = data['distorted'].to(DEVICE) # shape (b s c h w)
+                labels = data['delta_target'].to(DEVICE).float() # shape (b)
                 outputs = model(reference, distorted) # shape (b 1)
                 loss = criterion(outputs, labels[:, None])
-                # print("L1 (MSE):", loss.item())
+                #print("L1 (MSE):", loss.item())
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-
-        # Validation
 
         model.eval()
         val_loss = []
         outs_val = []
         gt_val = []
         with torch.no_grad():
+            step = 0
             for data in tqdm.tqdm(val_loader):
+                # if step > 10:
+                #     break
+                step += 1
                 with torch.cuda.amp.autocast():
-                    reference = data["reference"].to(DEVICE)
-                    distorted = data["distorted"].to(DEVICE)
-                    labels = data["iou_dist"].to(DEVICE).float()
+                    reference = data['reference'].to(DEVICE)
+                    distorted = data['distorted'].to(DEVICE)
+                    labels = data['delta_target'].to(DEVICE).float()
                     outputs = model(reference, distorted)
                     loss = criterion(outputs, labels[:, None])
                 val_loss.append(loss.item())
@@ -100,18 +99,17 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
             best_spearman = corr_spearman
 
             save_data = {
-                "model": model,
-                "optimizer": optimizer
+                'model': model,
+                'optimizer': optimizer
             }
             torch.save(save_data, checkpoint)
 
 
 def evaluate(checkpoint, val_loader):
-    ckpt_path = Path(checkpoint)
-    if ckpt_path.exists():
-        ckpt = torch.load(checkpoint, map_location=torch.device(DEVICE))
-        model = ckpt["model"]
-        print("Model loaded from checkpoint")
+    checkpoint = Path(checkpoint)
+    if checkpoint.exists():
+        checkpoint = torch.load(checkpoint, map_location=torch.device(DEVICE))
+        model = checkpoint["model"]
     else:
         print("Checkpoint not found, stop evaluation")
         return
@@ -119,52 +117,52 @@ def evaluate(checkpoint, val_loader):
     model.eval()
     out_index = []
     val_loss = []
-    outs = []
+    outs_val = []
     with torch.no_grad():
         for data in tqdm.tqdm(val_loader):
             with torch.cuda.amp.autocast():
-                reference = data["reference"].to(DEVICE)
-                distorted = data["distorted"].to(DEVICE)
-                labels = data["iou_dist"].to(DEVICE).float()
-                indices = data["index"] # shape (b)
+                reference = data['reference'].to(DEVICE) # shape (b s c h w)
+                distorted = data['distorted'].to(DEVICE)
+                labels = data['delta_target'].to(DEVICE).float()
+                indices = data["index"] # shape (b s)
                 outputs = model(reference, distorted)
-            out_index += list(indices.numpy())
-            outs_flat = outputs.detach().flatten()
-            outs += list(outs_flat.cpu().numpy())
+            b, s, c, h, w = reference.shape
+            out_index += list(indices.numpy().flatten())
+            outs_dup = outputs.detach().expand(-1, s).flatten()
+            outs_val += list(outs_dup.cpu().numpy())
     df = pd.DataFrame({
         "index": out_index,
-        "prediction": outs
+        "delta": outs_val
     })
-    df.to_csv("test.csv", index=False)
+    df.to_csv("deltas.csv", index=False)
 
 
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
-    is_evaluate = False
-    batch_size = 128
-    workers = 32
+    is_evaluate = True
 
-    coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
+    batch_size = 16
+    workers = 32
+    batch_s = 10
+
+    coco_base = BaseDataset(csv_path="../datasets/coco_5k_results/merged.csv",
         data_path="../datasets/coco_5k_v3_decoded")
-    # coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
-    #                         data_path="../datasets/huawei_objects_decoded")
-    train_dataset = TrainDataset(coco_base, validation=False)
-    val_dataset =   TrainDataset(coco_base, validation=True)
+    train_dataset = TrainDataset(coco_base, validation=False, batch=batch_s)
+    val_dataset = TrainDataset(coco_base, validation=True, batch=batch_s)
+    test_dataset = TestDataset(coco_base, batch=batch_s)
 
     criterion_l1 = nn.L1Loss()
     model = Net().to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
     if is_evaluate:
-        test_dataset = TrainDataset(coco_base, no_split=True)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size,
-            num_workers=workers, drop_last=True, pin_memory=False)
+        test_loader = data.DataLoader(test_dataset, batch_size=batch_size,
+            num_workers=workers, drop_last=False, pin_memory=False)
 
         evaluate(checkpoint_path, test_loader)
     else:
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
+        train_loader = data.DataLoader(train_dataset, batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size,
+        val_loader = data.DataLoader(val_dataset, batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
-        num_epochs = 10
-        train(model, optimizer, criterion_l1, train_loader, val_loader, num_epochs, checkpoint_path)
+        train(model, optimizer, criterion_l1, train_loader, val_loader, 200, checkpoint_path)
