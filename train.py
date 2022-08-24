@@ -137,23 +137,20 @@ if __name__ == "__main__":
     batch_size = 256
     workers = 32
 
-    model = Net().to(DEVICE)
-    if Path(checkpoint_path).exists():
-        ckpt = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
-        model = ckpt["model"]
-        print("Model loaded from checkpoint")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-    criterion_l1 = nn.L1Loss()
-
     if is_evaluate:
+        # Evaluate model on whole dataset
+
         coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
                                 data_path="../datasets/huawei_objects_decoded")
         test_dataset = TrainDataset(coco_base, no_split=True)
+
         test_loader = DataLoader(test_dataset, batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
         evaluate(checkpoint_path, test_loader)
     else:
+        # Train on 70%, validate on 30%
+
         coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
                                 data_path="../datasets/coco_5k_v3_decoded")
         train_dataset = TrainDataset(coco_base, validation=False)
@@ -164,5 +161,13 @@ if __name__ == "__main__":
         val_loader =   DataLoader(val_dataset,   batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
-        num_epochs = 10
+        model = Net().to(DEVICE)
+        if Path(checkpoint_path).exists():
+            ckpt = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
+            model = ckpt["model"]
+            print("Model loaded from checkpoint")
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+        criterion_l1 = nn.L1Loss()
+
+        num_epochs = 20
         train(model, optimizer, criterion_l1, train_loader, val_loader, num_epochs, checkpoint_path)
