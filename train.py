@@ -28,21 +28,6 @@ from dataset import BaseDataset, TrainDataset
 
 DEVICE = "cuda"
 
-class Net(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.backbone = resnet18(pretrained=True)
-        self.backbone.fc = nn.Identity()
-        self.fc = nn.Linear(512 * 3, 1)
-
-    def forward(self, ref, dist):
-        b, c, h, w = ref.shape
-        a = self.backbone(ref)  # (b, c, h, w) -> (b, 512)
-        b = self.backbone(dist)
-        concat = torch.cat((a, b, a-b), dim=1)  # (b, 512*3)
-        x = self.fc(concat)  # (b, 1)
-        return x
-
 class FeatureExtractor(nn.Module):
     def __init__(self, output_layer=None):
         super().__init__()
@@ -62,7 +47,7 @@ class FeatureExtractor(nn.Module):
         self.feat_extractor = nn.Sequential(self.pretrained._modules)
         self.pretrained = None
 
-        self.fc = nn.Linear(512 * 2 * 2 * 3, 1)
+        self.fc = nn.Linear(512 * 1 * 1 * 3, 1)
 
     def forward(self, img_ref, img_dist, padded_bboxes, padded_ious):
         feat_ref = self.feat_extractor(img_ref) # b 512 h w
@@ -84,10 +69,10 @@ class FeatureExtractor(nn.Module):
 
         b, c, h, w = img_ref.shape
         _b, _c, fh, fw = feat_ref.shape
-        pooling_size = (2, 2)
-        roi_ref = torchvision.ops.roi_pool(feat_ref, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h) # (n_boxes, c, gridh, gridw)
-        roi_dist = torchvision.ops.roi_pool(feat_dist, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h)
-        roi_diff = torchvision.ops.roi_pool(feat_ref - feat_dist, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h)
+        pooling_size = (1, 1)
+        roi_ref = torchvision.ops.roi_align(feat_ref, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h) # (n_boxes, c, gridh, gridw)
+        roi_dist = torchvision.ops.roi_align(feat_dist, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h)
+        roi_diff = torchvision.ops.roi_align(feat_ref - feat_dist, boxes=bboxes, output_size=pooling_size, spatial_scale=fh / h)
         concat = torch.stack((roi_ref, roi_dist, roi_diff), dim=1)
         flat = concat.view(n_bboxes, -1)
         out = self.fc(flat)
@@ -98,75 +83,57 @@ def train(model, optimizer, criterion, train_loader, val_loader, num_epochs, che
     best_spearman = 0
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(num_epochs):
-        # Train
+        for is_train in [True, False]:
+            if is_train:
+                print("== Train ==")
+                model.train()
+            else:
+                print("== Validation ==")
+                model.eval()
 
-        model.train()
-        val_loss = []
-        outs_val = []
-        gt_val = []
-        step = 0
-        for data in tqdm.tqdm(train_loader):
-            if step > 50:
-                break
-            step += 1
-            optimizer.zero_grad()
+            val_loss = []
+            outs_val = []
+            gt_val = []
+            step = 1
 
-            with torch.cuda.amp.autocast():
-                reference = data["reference"].to(DEVICE) # shape (b c h w)
-                distorted = data["distorted"].to(DEVICE) # shape (b c h w)
-                padded_bboxes = data["bbox"].to(DEVICE)  # shape (b, k, 4)
-                padded_ious = data["iou_dist"].to(DEVICE) # shape (b)
-                outputs, labels = model(reference, distorted, padded_bboxes, padded_ious) # shape (b 1)
-                loss = criterion(outputs, labels[:, None]) # add dimension at the end
-                # print("L1 (MSE):", loss.item())
-            val_loss.append(loss.item())
-            outs_val.extend(list(outputs[:, 0].detach().cpu().numpy()))
-            gt_val.extend(list(labels.detach().cpu().numpy()))
+            loader = train_loader if is_train else val_loader
+            with torch.set_grad_enabled(is_train):
+                for data in tqdm.tqdm(loader):
+                    if is_train:
+                        optimizer.zero_grad()
+                    with torch.cuda.amp.autocast():
+                        reference = data["reference"].to(DEVICE) # shape (b c h w)
+                        distorted = data["distorted"].to(DEVICE) # shape (b c h w)
+                        padded_bboxes = data["bbox"].to(DEVICE)  # shape (b, k, 4)
+                        padded_ious = data["iou_dist"].to(DEVICE) # shape (b)
+                        outputs, labels = model(reference, distorted, padded_bboxes, padded_ious) # shape (b 1)
+                        loss = criterion(outputs, labels[:, None]) # add dimension at the end
+                    if is_train:
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                    val_loss.append(loss.item())
+                    outs_val.extend(list(outputs[:, 0].detach().cpu().numpy()))
+                    gt_val.extend(list(labels.detach().cpu().numpy()))
 
-        mean_loss = np.mean(val_loss)
-        corr_spearman = spearmanr(outs_val, gt_val)[0]
-        corr_pearsonr = pearsonr(outs_val, gt_val)[0]
-        corr_kendall = kendalltau(outs_val, gt_val)[0]
+                    if step % 50 == 0:
+                        mean_loss = np.mean(val_loss)
+                        corr_spearman = spearmanr(outs_val, gt_val)[0]
+                        corr_pearsonr = pearsonr(outs_val, gt_val)[0]
+                        corr_kendall = kendalltau(outs_val, gt_val)[0]
 
-        print(f"Valid Loss: {mean_loss:.3f} | Spearman: {corr_spearman:.3f} | Pearson: {corr_pearsonr:.3f} | Kendall: {corr_kendall:.3f}")
+                        print(f"Loss: {mean_loss:.3f} | Spearman: {corr_spearman:.3f} | Pearson: {corr_pearsonr:.3f} | Kendall: {corr_kendall:.3f}", flush=True)
 
-        # Validation
+                        if corr_spearman > best_spearman:
+                            best_spearman = corr_spearman
 
-        # model.eval()
-        # val_loss = []
-        # outs_val = []
-        # gt_val = []
-        # with torch.no_grad():
-        #     for data in tqdm.tqdm(val_loader):
-        #         with torch.cuda.amp.autocast():
-        #             reference = data["reference"].to(DEVICE)
-        #             distorted = data["distorted"].to(DEVICE)
-        #             labels = data["iou_dist"].to(DEVICE).float()
-        #             outputs = model(reference, distorted)
-        #             loss = criterion(outputs, labels[:, None])
-        #         val_loss.append(loss.item())
-        #         outs_val.extend(list(outputs[:, 0].detach().cpu().numpy()))
-        #         gt_val.extend(list(labels.detach().cpu().numpy()))
-        #
-        # mean_loss = np.mean(val_loss)
-        # corr_spearman = spearmanr(outs_val, gt_val)[0]
-        # corr_pearsonr = pearsonr(outs_val, gt_val)[0]
-        # corr_kendall = kendalltau(outs_val, gt_val)[0]
-        #
-        # print(f"Valid Loss: {mean_loss:.3f} | Spearman: {corr_spearman:.3f} | Pearson: {corr_pearsonr:.3f} | Kendall: {corr_kendall:.3f}")
-        #
-        # if corr_spearman > best_spearman:
-        #     best_spearman = corr_spearman
-        #
-        #     save_data = {
-        #         "model": model,
-        #         "optimizer": optimizer
-        #     }
-        #     torch.save(save_data, checkpoint_path)
+                            save_data = {
+                                "model": model,
+                                "optimizer": optimizer
+                            }
+                            torch.save(save_data, checkpoint_path)
+                    step += 1
 
 
 def evaluate(checkpoint, val_loader):
@@ -185,11 +152,12 @@ def evaluate(checkpoint, val_loader):
     with torch.no_grad():
         for data in tqdm.tqdm(val_loader):
             with torch.cuda.amp.autocast():
-                reference = data["reference"].to(DEVICE)
-                distorted = data["distorted"].to(DEVICE)
-                labels = data["iou_dist"].to(DEVICE).float()
-                indices = data["index"] # shape (b)
-                outputs = model(reference, distorted)
+                reference = data["reference"].to(DEVICE)  # shape (b c h w)
+                distorted = data["distorted"].to(DEVICE)  # shape (b c h w)
+                padded_bboxes = data["bbox"].to(DEVICE)  # shape (b, k, 4)
+                padded_ious = data["iou_dist"].to(DEVICE)  # shape (b)
+                indices = data["index"]  # shape (b)
+                outputs, labels = model(reference, distorted, padded_bboxes, padded_ious)  # shape (b 1)
             out_index += list(indices.numpy())
             outs_flat = outputs.detach().flatten()
             outs += list(outs_flat.cpu().numpy())
@@ -203,8 +171,8 @@ def evaluate(checkpoint, val_loader):
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
     is_evaluate = False
-    batch_size = 10
-    workers = 1
+    batch_size = 50
+    workers = 16
 
     if is_evaluate:
         # Evaluate model on whole dataset
@@ -238,5 +206,5 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
         criterion_l1 = nn.L1Loss()
 
-        num_epochs = 1
+        num_epochs = 3
         train(model, optimizer, criterion_l1, train_loader, val_loader, num_epochs, checkpoint_path)
