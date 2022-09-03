@@ -46,7 +46,7 @@ class BaseDataset:
         df = read_results_csv(csv_path)
         df["path"] = df.apply(partial(get_path, prepend=data_path), axis=1)  # add column with paths to images
         df["index"] = df.index  # add index to record output of model
-        df = df.set_index(["img_basename", "dataset_name", "object_id"], drop=False)  # fast (?) access to rows
+        df = df.set_index(["img_basename", "dataset_name"], drop=False)  # fast (?) access to rows
 
         # train-test split
         train_names, val_names = train_test_split(df["img_basename"].unique(), test_size=0.3, random_state=1543)
@@ -54,7 +54,7 @@ class BaseDataset:
         self.val_data = df[df["img_basename"].isin(val_names)].copy()
         self.data = df
 
-        # list of possible codec + quality variants, excluding reference: av1_150, h264_35, ...
+        # list of possible codec + quality variants, exclude original: av1_150, h264_35, ...
         dists_set = set(df["dataset_name"].unique())
         self.dists = list(dists_set - {"ref"})
 
@@ -81,37 +81,78 @@ class TrainDataset(torch.utils.data.Dataset):
         else:
             self.data = base_dataset.train_data
 
+        self.image_list = self.data[["img_basename", "dataset_name"]].drop_duplicates()
+
     # getitem-based dataset (instead of iterable dataset) allows shuffling
     def __getitem__(self, index):
         input_size = 224
 
         index = index % len(self)
 
-        # select degradation
-        row_dist = self.data.iloc[index]
-        name, codec, objid = row_dist["img_basename"], row_dist["dataset_name"], row_dist["object_id"]
-        xmin, ymin, xmax, ymax = map(int, [row_dist.xmin, row_dist.ymin, row_dist.xmax, row_dist.ymax])
-        row_ref = self.data.loc[name, "ref", objid]
+        # select image name + degradation
+        name_dist = self.image_list.iloc[index]
+        name, codec = name_dist["img_basename"], name_dist["dataset_name"]
+
+        # select all objects in image
+        df_dist = self.data.loc[name, codec]
+
+        row_dist = df_dist.iloc[0]
+        row_ref = self.data.loc[name, "ref"].iloc[0]  # select (name, codec) using multiindex + select first row
 
         # print("Reference", row_ref["path"])
         # print("Distorted", row_dist["path"])
 
         image_ref = cv2.imread(row_ref["path"])
         image_ref = image_ref[:, :, ::-1].astype(np.float32) / 255
-        image_ref = image_ref[ymin:ymax, xmin:xmax]
-        image_ref = cv2.resize(image_ref, (input_size, input_size))
 
         image_dist = cv2.imread(row_dist["path"])
         image_dist = image_dist[:, :, ::-1].astype(np.float32) / 255
-        image_dist = image_dist[ymin:ymax, xmin:xmax]
-        image_dist = cv2.resize(image_dist, (input_size, input_size))
+
+        # crop random rectangle with fixed height and width
+        h, w, c = image_ref.shape
+        boxw = 700
+        boxh = 700
+        padx = (max(w, boxw) - w) // 2 + 1  # if boxw > w, add padding
+        pady = (max(h, boxh) - h) // 2 + 1
+        xmin = torch.randint(0, w - min(w, boxw) + 1, size=(1,))  # if boxw > w, choose 0
+        ymin = torch.randint(0, h - min(h, boxh) + 1, size=(1,))
+        xmax = xmin + boxw
+        ymax = ymin + boxh
+
+        pad = np.pad(image_ref, ((pady, pady), (padx, padx), (0, 0)), "mean")
+        crop_ref = pad[ymin:ymax, xmin:xmax]
+        pad = np.pad(image_dist, ((pady, pady), (padx, padx), (0, 0)), "mean")
+        crop_dist = pad[ymin:ymax, xmin:xmax]
+
+        # select bboxes inside random rect
+        MAX_BBOXES = 50
+        bboxes = []  # [ [x1 y1 x2 y2], ... ]
+        ious = []  # [ i1 i2 ... ]
+        for _index, b in df_dist.iterrows():
+            b.xmin += padx
+            b.xmax += padx
+            b.ymin += pady
+            b.ymax += pady
+            if (xmin <= b.xmin and b.xmax < xmax and
+                    ymin <= b.ymin and b.ymax < ymax
+            ):
+                bboxes.append([b.xmin - xmin, b.ymin - ymin, b.xmax - xmin, b.ymax - ymin])
+                ious.append(b.iou)
+
+        t_bboxes = torch.tensor(bboxes)  # (k, 4)
+        k, _coors = t_bboxes.shape
+        t_bboxes = nn.functional.pad(t_bboxes, (0, 0, 0, MAX_BBOXES - k))
+
+        t_ious = torch.tensor(ious)
+        t_ious = nn.functional.pad(t_ious, (0, MAX_BBOXES - k))
 
         return {
-            "reference": torch.tensor(image_ref).permute(2, 0, 1),
-            "distorted": torch.tensor(image_dist).permute(2, 0, 1),
-            "iou_dist": row_dist["iou"],
+            "reference": torch.tensor(crop_ref).permute(2, 0, 1).float(),  # (c, h, w)
+            "distorted": torch.tensor(crop_dist).permute(2, 0, 1).float(),  # (c, h, w)
+            "bbox": t_bboxes.float(),  # (k, 4)
+            "iou_dist": t_ious.float(),  # (k)
             "index": index
         }
 
     def __len__(self):
-        return self.data.shape[0]
+        return self.image_list.shape[0]
