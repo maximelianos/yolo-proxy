@@ -134,8 +134,8 @@ def evaluate(checkpoint, val_loader):
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
     is_evaluate = False
-    batch_size = 256
-    workers = 32
+    batch_size = 32
+    workers = 16
 
     if is_evaluate:
         # Evaluate model on whole dataset

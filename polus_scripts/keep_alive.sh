@@ -3,16 +3,19 @@ abs_path=$(cd "$rel_path" && pwd)       # absolutized and normalized
 
 cd "$rel_path"
 while true; do
-  if test -f "run.lock"; then         # file exists, wait
+  if test -f "run.lock"; then           # file with job number exists
     num="$(cat run.lock)"
-    echo $num
-    echo $(bjobs)
-    if [[ $(bjobs) == *"$num"* ]]; then
-      echo "It's there!"
+    jobs=$(bjobs)
+    if [[ $jobs == *"$num"* ]]; then
+      sleep 1                           # job is working
+    else
+      rm "run.lock"
     fi
-    sleep 1
-  else                                # file does not exist, launch training
-    echo "Submit job at $(date)"
-    bash sub_test.sh | sed 's/Job <\([0-9]*\)>.*/\1/' > "run.lock"
+  else                                  # file does not exist, launch training
+    #echo -e "Job <123456> submitted to queue <normal>\nWaiting for job to finish" | sed -n 's/Job <\([0-9]*\)>.*/\1/p' > "run.lock"
+    bash submit_net.sh | sed -n 's/Job <\([0-9]*\)>.*/\1/p' > "run.lock"
+    num="$(cat run.lock)"
+    echo "Submitted job <$num> at $(date)"
   fi
+  sleep 10
 done
