@@ -152,8 +152,8 @@ def evaluate(checkpoint, val_loader):
     with torch.no_grad():
         step = 0
         for data in tqdm.tqdm(val_loader):
-            if step > 10:
-                break
+            # if step > 10:
+            #     break
             step += 1
             with torch.cuda.amp.autocast():
                 reference = data["reference"].to(DEVICE)  # shape (b c h w)
@@ -170,20 +170,20 @@ def evaluate(checkpoint, val_loader):
     corr_kendall  = kendalltau(step_outs, step_gt)[0]
 
     print(
-        f"Loss: {mean_loss:.3f} | Spearman: {corr_spearman:.3f} | Pearson: {corr_pearsonr:.3f} | Kendall: {corr_kendall:.3f}",
+        f"Spearman: {corr_spearman:.3f} | Pearson: {corr_pearsonr:.3f} | Kendall: {corr_kendall:.3f}",
         flush=True)
-    df = pd.DataFrame({
-        "index": indices,
-        "prediction": step_outs
-    })
-    df.to_csv("test.csv", index=False)
+    # df = pd.DataFrame({
+    #     "index": indices,
+    #     "prediction": step_outs
+    # })
+    # df.to_csv("test.csv", index=False)
 
 
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
     is_evaluate = True
     batch_size = 10
-    workers = 1
+    workers = 10
 
     if is_evaluate:
         # Evaluate model on whole dataset
