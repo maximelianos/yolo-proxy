@@ -41,13 +41,10 @@ def get_path(row, prepend):
     return f"{prepend}/{codec}/{name}.{extension}"
 
 def split_names(csv_path, names, test_size=0.3):
-    # TODO: Implement different logic for datasets
     if 'huawei' in csv_path:
         # shuffle videos
         names["videoname"] = names[IMG_KEY].apply(lambda filename: filename.split(".mp4")[0])
-        train_videos, val_videos = train_test_split(names["videoname"].unique(), test_size=test_size, random_state=1543, )
-        # print(train_videos)
-        # print(val_videos)
+        train_videos, val_videos = train_test_split(names["videoname"].unique(), test_size=test_size, random_state=1543)
         return (names[names["videoname"].isin(train_videos)][IMG_KEY], names[names["videoname"].isin(val_videos)][IMG_KEY])
     else:
         return train_test_split(names[IMG_KEY].unique(), test_size=test_size, random_state=1543, )
@@ -59,6 +56,9 @@ class BaseDataset:
         df["path"] = df.apply(partial(get_path, prepend=data_path), axis=1)  # add column with paths to images
         df["index"] = df.index  # add index to record output of model
         df = df.set_index(["img_basename", "dataset_name", "object_id"], drop=False)  # fast (?) access to rows
+
+        df["area"] = (df["ymax"] - df["ymin"]) * (df["xmax"] - df["xmin"])
+        df = df[ df["area"] > 900 ]
 
         # train-test split
         name_df = pd.DataFrame(df["img_basename"].unique(), columns=[IMG_KEY])

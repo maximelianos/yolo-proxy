@@ -29,8 +29,26 @@ from dataset import BaseDataset, TrainDataset
 DEVICE = "cuda"
 
 class Net(nn.Module):
+    def run_yolo(self, x, save=[10]):
+        result = []
+        for i in range(max(save) + 1):
+            x = self.yolo_ch2[i](x)
+            if i in save:
+                result.append(x)
+        return result
+
     def __init__(self, output_layer=None):
         super().__init__()
+
+        # YOLOv5s backbone
+        model_yolo = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+        model_yolo.train()
+        yolo_ch1 = next(model_yolo.children())
+        self.yolo_ch2 = next(yolo_ch1.children())
+        for name, param in self.yolo_ch2.named_parameters():
+            param.requires_grad = True
+
+        # ResNet18 backbone
         self.pretrained = resnet18(pretrained=True)
         self.output_layer = output_layer
         self.layers = list(self.pretrained._modules.keys())
@@ -43,19 +61,27 @@ class Net(nn.Module):
         for i in range(1, len(self.layers) - self.layer_count):
             self.pretrained._modules.pop(self.layers[-i])
 
-        self.backbone = nn.Sequential(
-            self.pretrained._modules
-            + nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        )
+        modules = self.pretrained._modules
+        modules["avgpool"] = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.backbone = nn.Sequential(modules)
         self.pretrained = None
+
+        # Fully-connected head
 
         # self.backbone = resnet18(pretrained=True)
         # self.backbone.fc = nn.Identity()
-        self.fc = nn.Linear(512 * 2, 1)
+        # self.fc = nn.Linear(512 * 1, 1)
+        # self.fc2 = nn.Linear(512 * 1, 1)
+        self.avg = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.fc = nn.Linear(512, 1)
 
     def forward(self, ref, dist):
         b, c, h, w = ref.shape
-        a = self.backbone(ref)  # (b, c, h, w) -> (b, 512)
+        #a = self.backbone(ref).view(b, -1)  # (b, c, h, w) -> (b, 512)
+        a = self.run_yolo(ref, save=[8])
+        a = [self.avg(x) for x in a]
+        a = torch.cat(a, dim=1).view(b, -1)
+
         # b = self.backbone(dist)
         # concat = torch.cat((a, b), dim=1)  # (b, 512*3)
         x = self.fc(a)  # (b, 1)
@@ -154,39 +180,33 @@ def evaluate(checkpoint, val_loader):
 
 if __name__ == "__main__":
     checkpoint_path = "checkpoints/proxy_model.pth"
-    is_evaluate = False
-    batch_size = 2
-    workers = 1
+    is_evaluate = True
+    batch_size = 128
+    workers = 48
+
+    coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
+                            data_path="../datasets/coco_5k_v3_decoded")
+    huawei_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
+                              data_path="../datasets/huawei_objects_decoded")
+
+    # train_dataset = torch.utils.data.ConcatDataset([TrainDataset(coco_base), TrainDataset(huawei_base)])
+    train_dataset = TrainDataset(coco_base)
+    val_dataset =  TrainDataset(coco_base,   validation=True)
+    test_dataset = TrainDataset(huawei_base, no_split=True)
+
+    model = Net(output_layer="layer4").to(DEVICE)
 
     if is_evaluate:
-        # Evaluate model on whole dataset
-
-        coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
-                                data_path="../datasets/huawei_objects_decoded")
-        # coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
-        #                         data_path="../datasets/coco_5k_v3_decoded")
-        test_dataset = TrainDataset(coco_base, validation=True)
-
         test_loader = DataLoader(test_dataset, batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
-
         evaluate(checkpoint_path, test_loader)
     else:
         # Train on 70%, validate on 30%
-
-        coco_base = BaseDataset(csv_path="../datasets/object_results/coco_5k_v3/yolov5s.csv",
-                                data_path="../datasets/coco_5k_v3_decoded")
-        # coco_base = BaseDataset(csv_path="../datasets/object_results/huawei_objects/yolov5s.csv",
-        #                         data_path="../datasets/huawei_objects_decoded")
-        train_dataset = TrainDataset(coco_base, validation=False)
-        val_dataset =   TrainDataset(coco_base, validation=True)
-
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
             num_workers=workers, drop_last=True, pin_memory=False)
         val_loader =   DataLoader(val_dataset,   batch_size=batch_size,
             num_workers=workers, drop_last=True, pin_memory=False)
 
-        model = Net(output_layer="layer2").to(DEVICE)
         if Path(checkpoint_path).exists():
             ckpt = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
             model = ckpt["model"]
@@ -194,5 +214,5 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
         criterion_l1 = nn.L1Loss()
 
-        num_epochs = 1
+        num_epochs = 20
         train(model, optimizer, criterion_l1, train_loader, val_loader, num_epochs, checkpoint_path)
